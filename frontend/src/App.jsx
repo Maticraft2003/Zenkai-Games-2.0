@@ -1,14 +1,29 @@
 import "./App.css";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 
 function App() {
+
+  // Busca si hay un usuario guardado
+  const usuario = localStorage.getItem("usuario");
+
   return (
     <Routes>
-      <Route path="/" element={<Login />} />
-      <Route path="/home" element={<Home />} />
+
+      {/* Si NO hay usuario -> Login */}
+      <Route
+        path="/"
+        element={usuario ? <Navigate to="/home" /> : <Login />}
+      />
+
+      {/* Si hay usuario -> Home */}
+      <Route
+        path="/home"
+        element={usuario ? <Home /> : <Navigate to="/" />}
+      />
+
     </Routes>
   );
 }

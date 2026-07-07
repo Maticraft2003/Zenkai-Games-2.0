@@ -1,4 +1,14 @@
+import { useNavigate } from "react-router-dom";
 function Home() {
+  const navigate = useNavigate();
+
+  const cerrarSesion = () => {
+
+    localStorage.removeItem("usuario");
+
+    navigate("/");
+
+};
   return (
     <div className="App">
       <h1>Bienvenido a Zenkai Games</h1>
@@ -24,9 +34,9 @@ function Home() {
           <li><a href="#acerca-de">Acerca de</a></li>
         </ul>
       </nav>
-      <div className="login">
-         <button>Iniciar Sesión</button>
-      </div>
+     <button onClick={cerrarSesion}>
+    🚪 Cerrar sesión
+     </button>
        <div className="login">
          <button>Mi Perfil</button>
       </div>
