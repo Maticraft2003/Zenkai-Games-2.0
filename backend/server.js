@@ -41,8 +41,12 @@ app.post("/login", (req, res) => {
 
             return res.json({
                 success: true,
-                mensaje: "Bienvenido"
-            });
+                mensaje: "Bienvenido",
+                usuario: {
+                id: usuario.id,
+                email: usuario.email
+              }
+         });
 
         }
     );
