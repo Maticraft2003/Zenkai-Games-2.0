@@ -23,11 +23,18 @@ function Login() {
             }
         );
 
-        if (respuesta.data.success) {
+       if (respuesta.data.success) {
 
-            navigate("/home");
+            localStorage.setItem(
+                "usuario",
+                JSON.stringify(respuesta.data.usuario)
+           );
 
-        } else {
+           navigate("/home");
+
+}
+ 
+         else {
 
             alert("Correo o contraseña incorrectos");
 
