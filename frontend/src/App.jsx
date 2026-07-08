@@ -1,3 +1,4 @@
+import Register from "./pages/Register";
 import "./App.css";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -11,8 +12,13 @@ function App() {
 
   return (
     <Routes>
+      {/* Si NO hay usuario -> Register */}
+    <Route
+      path="/register"
+      element={<Register />}
+     />
 
-      {/* Si NO hay usuario -> Login */}
+      {/* Si hay usuario -> Login */}
       <Route
         path="/"
         element={usuario ? <Navigate to="/home" /> : <Login />}

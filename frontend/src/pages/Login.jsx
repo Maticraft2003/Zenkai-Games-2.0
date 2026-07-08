@@ -54,6 +54,16 @@ function Login() {
         <div className="login-box">
             <h1>Zenkai Games</h1>
             <p>Inicia sesión</p>
+            <p>¿No tenés una cuenta?</p>
+
+              <button
+                  className="register-link"
+                  onClick={() => navigate("/register")}
+                >
+
+                   Registrarme
+
+              </button>
             <input
                 type="email"
                 placeholder="Correo electrónico"
