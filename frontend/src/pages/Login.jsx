@@ -53,6 +53,9 @@ function Login() {
     <div className="login-container">
         <div className="login-box">
             <h1>Zenkai Games</h1>
+            <p className="subtitle">
+            Tu portal al mundo gamer
+            </p>
             <p>Inicia sesión</p>
             <p>¿No tenés una cuenta?</p>
 

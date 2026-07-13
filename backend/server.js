@@ -52,6 +52,44 @@ app.post("/login", (req, res) => {
     );
 
 });
+app.post("/register", (req, res) => {
+
+    const { username, email, password } = req.body;
+
+    db.run(
+
+        `
+        INSERT INTO usuarios(username, email, password)
+        VALUES(?, ?, ?)
+        `,
+
+        [username, email, password],
+
+        function(err) {
+
+            if (err) {
+
+                return res.json({
+
+                    success: false,
+                    mensaje: "Ese correo ya está registrado."
+
+                });
+
+            }
+
+            return res.json({
+
+                success: true,
+                mensaje: "Usuario creado correctamente."
+
+            });
+
+        }
+
+    );
+
+});
 app.listen(PORT, () => {
   console.log(`Servidor iniciado en http://localhost:${PORT}`);
 });

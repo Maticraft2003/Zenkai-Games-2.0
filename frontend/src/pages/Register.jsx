@@ -1,3 +1,5 @@
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import "./Login.css";
 
@@ -6,6 +8,42 @@ function Register() {
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const navigate = useNavigate();
+
+    const registrarUsuario = async () => {
+
+    try {
+
+        const respuesta = await axios.post(
+            "http://localhost:3001/register",
+            {
+                username,
+                email,
+                password
+            }
+        );
+
+        if (respuesta.data.success) {
+
+            alert("Cuenta creada correctamente.");
+
+            navigate("/");
+
+        } else {
+
+            alert(respuesta.data.mensaje);
+
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("No se pudo conectar con el servidor.");
+
+    }
+
+};
 
     return (
 
@@ -38,9 +76,10 @@ function Register() {
                     onChange={(e) => setPassword(e.target.value)}
                 />
 
-                <button>
-
-                    Crear cuenta
+                <button
+                    onClick={registrarUsuario}
+                >
+                Crear cuenta
 
                 </button>
 
