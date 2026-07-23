@@ -165,8 +165,43 @@ body{
     0 0 20px red;
 
 }
+
 .login-box:hover{
 
     box-shadow:0 0 20px red;
+
+}
+
+.login-box{
+
+    position:relative;
+
+    z-index:10;
+
+}
+
+#tsparticles{
+
+    position: fixed;
+
+    inset: 0;
+
+    z-index: 0;
+
+}
+
+.login-container{
+
+    position: relative;
+
+    z-index: 1;
+
+}
+
+.login-box{
+
+    position: relative;
+
+    z-index: 2;
 
 }

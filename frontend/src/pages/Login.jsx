@@ -1,3 +1,4 @@
+import ParticlesBackground from "../components/ParticlesBackground";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -51,7 +52,11 @@ function Login() {
     
   return (
     <div className="login-container">
-        <div className="login-box">
+
+    <ParticlesBackground />
+
+    <div className="login-box">
+        
             <h1>Zenkai Games</h1>
             <p className="subtitle">
             Tu portal al mundo gamer
