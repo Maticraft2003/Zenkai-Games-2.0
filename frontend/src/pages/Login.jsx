@@ -53,7 +53,7 @@ function Login() {
   return (
     <div className="login-container">
 
-    <ParticlesBackground />
+    <ParticlesBackground /> 
 
     <div className="login-box">
         
