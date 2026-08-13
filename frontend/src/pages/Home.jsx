@@ -1,14 +1,16 @@
+import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router-dom";
 import ParticlesBackground from "../components/ParticlesBackground";
 
 function Home() {
   const navigate = useNavigate();
 
-  const cerrarSesion = () => {
-    localStorage.removeItem("usuario");
+  const { logout } = useAuth();   
+
+  const cerrarSesion = () => {    
+    logout();
     navigate("/");
   };
-
   return (
     <div className="App" style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
       <ParticlesBackground />

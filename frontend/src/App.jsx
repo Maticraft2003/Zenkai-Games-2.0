@@ -1,38 +1,57 @@
-import Register from "./pages/Register";
 import "./App.css";
-import { Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Home from "./pages/Home";
 
-function App() {
+import { Routes, Route, Navigate } from "react-router-dom";
 
-  // Busca si hay un usuario guardado
-  const usuario = localStorage.getItem("usuario");
+import { useAuth } from "./context/useAuth";
+
+function App() {
+  const { usuario } = useAuth();
 
   return (
     <Routes>
-      {/* Si NO hay usuario -> Register */}
-    <Route
-      path="/register"
-      element={<Register />}
-     />
 
-      {/* Si hay usuario -> Login */}
+      {/* LOGIN */}
       <Route
         path="/"
-        element={usuario ? <Navigate to="/home" /> : <Login />}
+        element={
+          usuario ? (
+            <Navigate to="/home" replace />
+          ) : (
+            <Login />
+          )
+        }
       />
 
-      {/* Si hay usuario -> Home */}
+      {/* REGISTRO */}
+      <Route
+        path="/register"
+        element={
+          usuario ? (
+            <Navigate to="/home" replace />
+          ) : (
+            <Register />
+          )
+        }
+      />
+
+      {/* HOME */}
       <Route
         path="/home"
-        element={usuario ? <Home /> : <Navigate to="/" />}
+        element={
+          usuario ? (
+            <Home />
+          ) : (
+            <Navigate to="/" replace />
+          )
+        }
       />
 
     </Routes>
   );
-  
 }
 
 export default App;
