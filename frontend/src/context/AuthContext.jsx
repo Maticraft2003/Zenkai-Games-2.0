@@ -1,56 +1,55 @@
-import { createContext, useContext, useState } from "react";
+import { useState } from "react";
+import { AuthContext } from "./useAuth";
 
-const AuthContext = createContext();
+const STORAGE_KEY = "usuario";
 
-function AuthProvider({ children }) {
+function getStoredUser() {
+  if (typeof window === "undefined") return null;
 
-    const [usuario, setUsuario] = useState(() => {
-
-        const guardado = localStorage.getItem("usuario");
-
-        return guardado ? JSON.parse(guardado) : null;
-
-    });
-
-    const login = (datosUsuario) => {
-
-        localStorage.setItem(
-            "usuario",
-            JSON.stringify(datosUsuario)
-        );
-
-        setUsuario(datosUsuario);
-
-    };
-
-    const logout = () => {
-
-        localStorage.removeItem("usuario");
-
-        setUsuario(null);
-
-    };
-
-    return (
-
-        <AuthContext.Provider
-            value={{
-                usuario,
-                login,
-                logout
-            }}
-        >
-
-            {children}
-
-        </AuthContext.Provider>
-
-    );
-
+  try {
+    const guardado = window.localStorage.getItem(STORAGE_KEY);
+    return guardado ? JSON.parse(guardado) : null;
+  } catch (error) {
+    console.error("Error al leer el usuario guardado:", error);
+    window.localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
 }
 
-export function useAuth() {
-    return useContext(AuthContext);
+function AuthProvider({ children }) {
+  const [usuario, setUsuario] = useState(() => getStoredUser());
+
+  const login = (datosUsuario) => {
+    const payload = datosUsuario ?? null;
+
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      }
+    } catch (error) {
+      console.error("Error al guardar el usuario:", error);
+    }
+
+    setUsuario(payload);
+  };
+
+  const logout = () => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error("Error al limpiar el usuario:", error);
+    }
+
+    setUsuario(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ usuario, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export default AuthProvider;

@@ -1,5 +1,4 @@
 import { useAuth } from "../context/useAuth";
-import ParticlesBackground from "../components/ParticlesBackground";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -49,8 +48,6 @@ function Login() {
   return (
     <div className="login-container">
 
-      <ParticlesBackground />
-
       <div className="login-box">
 
         <h1>Zenkai Games</h1>
@@ -62,13 +59,6 @@ function Login() {
         <p>Inicia sesión</p>
 
         <p>¿No tenés una cuenta?</p>
-
-        <button
-          className="register-link"
-          onClick={() => navigate("/register")}
-        >
-          Registrarme
-        </button>
 
         <input
           type="email"
@@ -102,6 +92,13 @@ function Login() {
           onClick={iniciarSesion}
         >
           Iniciar sesión
+        </button>
+
+        <button
+          className="register-button"
+          onClick={() => navigate("/register")}
+        >
+          Registrarme
         </button>
 
       </div>
