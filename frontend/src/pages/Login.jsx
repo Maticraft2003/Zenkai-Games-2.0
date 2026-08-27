@@ -58,8 +58,6 @@ function Login() {
 
         <p>Inicia sesión</p>
 
-        <p>¿No tenés una cuenta?</p>
-
         <input
           type="email"
           placeholder="Correo electrónico"
