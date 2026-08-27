@@ -1,6 +1,10 @@
 import sqlite3 from "sqlite3";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 
-const db = new sqlite3.Database("./zenkai.db", (err) => {
+const databasePath = resolve(dirname(fileURLToPath(import.meta.url)), "zenkai.db");
+
+const db = new sqlite3.Database(databasePath, (err) => {
 
     if (err) {
 
