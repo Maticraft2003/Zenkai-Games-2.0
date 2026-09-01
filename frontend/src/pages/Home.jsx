@@ -16,7 +16,7 @@ function Home() {
     <div className="home">
       <ParticlesBackground />
 
-      {/* ================= NAVBAR ================= */}
+
       <header className="navbar">
 
         <div className="navbar-logo">
@@ -70,8 +70,6 @@ function Home() {
 
       </header>
 
-
-      {/* ================= HERO ================= */}
       <main>
 
         <section className="hero">
@@ -122,7 +120,6 @@ function Home() {
         </section>
 
 
-        {/* ================= BIENVENIDA ================= */}
         <section className="welcome-section">
 
           <p className="section-label">
