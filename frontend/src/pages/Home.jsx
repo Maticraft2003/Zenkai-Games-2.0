@@ -139,7 +139,7 @@ function Home() {
         </section>
 
 
-        {/* ================= JUEGOS ================= */}
+       *Juegos*
         <section className="content-section">
 
           <div className="section-header">
@@ -172,11 +172,11 @@ function Home() {
               </div>
 
               <div className="game-card-content">
-                <span>ACCIÓN</span>
-                <h3>Próximamente</h3>
+                <span>Supervivencia</span>
+                <h3>Minecraft</h3>
                 <p>
-                  Descubrí nuevos juegos y agregalos
-                  a tus favoritos.
+                  Explorá, construí y sobreviví en un mundo 
+                  abierto lleno de aventuras y prácticamente sin límites.
                 </p>
 
                 <button onClick={() => navigate("/juegos")}>
@@ -192,10 +192,11 @@ function Home() {
               </div>
 
               <div className="game-card-content">
-                <span>AVENTURA</span>
-                <h3>Próximamente</h3>
+                <span>Acción</span>
+                <h3>Grand theft Auto VI</h3>
                 <p>
-                  Explorá nuestro catálogo de videojuegos.
+                  Sumérgete en la ciudad de Los Santos 
+                  y vive la experiencia de un crimen organizado.
                 </p>
 
                 <button onClick={() => navigate("/juegos")}>
@@ -211,10 +212,12 @@ function Home() {
               </div>
 
               <div className="game-card-content">
-                <span>COMPETITIVO</span>
-                <h3>Próximamente</h3>
+                <span>Terror</span>
+                <h3>Resident Evil 4</h3>
                 <p>
-                  Conocé los juegos que dominan los rankings.
+                  Acompaña a Leon S. Kennedy en su misión de rescatar
+                  a la hija del presidente de los Estados Unidos 
+                  en un pueblo rural de España.
                 </p>
 
                 <button onClick={() => navigate("/rankings")}>
@@ -228,7 +231,7 @@ function Home() {
         </section>
 
 
-        {/* ================= RANKINGS ================= */}
+       *Rankings*
         <section className="ranking-section">
 
           <div className="section-header">
@@ -257,19 +260,19 @@ function Home() {
 
             <div className="ranking-item first">
               <strong>#1</strong>
-              <span>🎮 Juego destacado</span>
+              <span>Minecraft</span>
               <b>9.8</b>
             </div>
 
             <div className="ranking-item">
               <strong>#2</strong>
-              <span>⚔️ Juego destacado</span>
+              <span>Grand theft Auto VI</span>
               <b>9.5</b>
             </div>
 
             <div className="ranking-item">
               <strong>#3</strong>
-              <span>🔥 Juego destacado</span>
+              <span>Resident Evil 4</span>
               <b>9.2</b>
             </div>
 
@@ -278,7 +281,7 @@ function Home() {
         </section>
 
 
-        {/* ================= NOTICIAS ================= */}
+        *Noticias*
         <section className="content-section">
 
           <div className="section-header">
@@ -306,23 +309,23 @@ function Home() {
           <div className="news-grid">
 
             <article className="news-card">
-              <span>NOTICIAS</span>
+              <span>Actualidad</span>
               <h3>
-                Las novedades de Zenkai Games
-              </h3>
+                Zenkai Games ya está en desarrollo
+              </h3> 
               <p>
-                Próximamente vas a encontrar las últimas
-                novedades del mundo gamer.
+                Conocé las novedades, mejoras y nuevas funcionalidades que llegaran al proyecto.
               </p>
             </article>
 
             <article className="news-card">
-              <span>LANZAMIENTOS</span>
+              <span>Videojuegos</span>
               <h3>
-                Nuevos juegos
+                Los videojuegos más destacados y esperados del año.
               </h3>
               <p>
-                Mantente al día con los próximos lanzamientos.
+                Explorá nuestro catálogo y descubrí títulos
+                populares de diferentes géneros.
               </p>
             </article>
 
