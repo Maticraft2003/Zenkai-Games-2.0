@@ -1,5 +1,5 @@
 import { useAuth } from "../context/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import ParticlesBackground from "../components/ParticlesBackground";
 import "./Home.css";
 
@@ -334,7 +334,7 @@ function Home() {
         </section>
 
 
-        {/* ================= COMUNIDAD ================= */}
+        *Comunidad*
         <section className="community-section">
 
           <div>
@@ -367,7 +367,7 @@ function Home() {
       </main>
 
 
-      {/* ================= FOOTER ================= */}
+     *Footer*
       <footer className="footer">
 
         <div>

@@ -1,6 +1,6 @@
 import { useAuth } from "../context/useAuth";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useState } from "react";
 import "./Login.css";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
@@ -96,7 +96,7 @@ function Login() {
           className="register-button"
           onClick={() => navigate("/register")}
         >
-          Registrarme
+          Registrarme 
         </button>
 
       </div>
