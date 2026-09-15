@@ -1,3 +1,4 @@
+import GameCard from "../components/GameCard";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router";
 import ParticlesBackground from "../components/ParticlesBackground";
@@ -11,7 +12,26 @@ function Home() {
     logout();
     navigate("/", { replace: true });
   };
-
+const juegosDestacados = [
+  {
+    nombre: "Minecraft",
+    genero: "Sandbox",
+    puntuacion: 9.5,
+    imagen: "https://placehold.co/300x400?text=Minecraft"
+  },
+  {
+    nombre: "GTA V",
+    genero: "Acción",
+    puntuacion: 9.2,
+    imagen: "https://placehold.co/300x400?text=GTA+V"
+  },
+  {
+    nombre: "Resident Evil 4",
+    genero: "Terror",
+    puntuacion: 9.4,
+    imagen: "https://placehold.co/300x400?text=Resident+Evil+4"
+  }
+];
   return (
     <div className="home">
       <ParticlesBackground />
@@ -139,30 +159,9 @@ function Home() {
         </section>
 
 
-       *Juegos*
-        <section className="content-section">
-
-          <div className="section-header">
-
-            <div>
-              <p className="section-label">
-                DESTACADOS
-              </p>
-
-              <h2>
-                🔥 Juegos destacados
-              </h2>
-            </div>
-
-            <button
-              className="outline-button"
-              onClick={() => navigate("/juegos")}
-            >
-              Ver todos →
-            </button>
-
-          </div>
-
+       {/*Juegos*/}
+        <section className="games-section">
+         <h2>🎮 Juegos destacados</h2>
 
           <div className="cards-grid">
 
