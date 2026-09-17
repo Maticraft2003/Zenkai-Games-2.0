@@ -3,7 +3,13 @@ function GameCard({ juego }) {
     <article className="game-card">
 
       <div className="game-card-image">
-        <img src={juego.imagen} alt={juego.nombre} />
+        <img 
+        src={juego.imagen} 
+        alt={juego.nombre} 
+        />
+        <span className="game-card-tag">
+          {juego.etiqueta}
+        </span>
       </div>
 
       <div className="game-card-info">
