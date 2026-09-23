@@ -18,6 +18,9 @@ function Home() {
       genero: "Sandbox",
       puntuacion: 9.5,
       etiqueta: "🔥 Más jugado",
+      jugadores: "1-10",
+      dificultad: "Fácil",
+      descripcion: "Creatividad infinita, construcciones épicas y experiencias cooperativas sin fin.",
       imagen: "https://images2.alphacoders.com/137/thumb-1920-1370592.jpeg"
     },
     {
@@ -25,6 +28,9 @@ function Home() {
       genero: "Acción",
       puntuacion: 9.2,
       etiqueta: "⭐ Destacado",
+      jugadores: "1-16",
+      dificultad: "Media",
+      descripcion: "Mundo abierto, misiones intensas, libertad completa y una jugabilidad enorme.",
       imagen: "https://cdn.wallpapersafari.com/92/89/S1KxLt.jpg"
     },
     {
@@ -32,27 +38,39 @@ function Home() {
       genero: "Terror",
       puntuacion: 9.4,
       etiqueta: "🏆 Top Zenkai",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Tensión constante, supervivencia brutal y una atmósfera increíblemente inmersiva.",
       imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQPfy213xBg46vWZjw04FLLIJvzmuG8g7X5wAuPvXX3VJAMHU75"
     },
     {
       nombre: "Doom Eternal",
       genero: "Shooter",
-      puntuacion: 8,
+      puntuacion: 8.9,
       etiqueta: "⚡ Clásico",
+      jugadores: "1-4",
+      dificultad: "Alta",
+      descripcion: "Acción frenética, armas brutales y un ritmo que no te deja respirar.",
       imagen: "https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcTLEzjM1fn9G1nsXTbaI4oKtuacL-1PT0xvKMG8TEcvIUtAj4qd"
     },
     {
       nombre: "Devil May Cry 5",
       genero: "Hack and Slash",
-      puntuacion: 8.1,
+      puntuacion: 8.7,
       etiqueta: "⚙️ Combate técnico",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Combos ultra vistosos, estilo impecable y una experiencia de acción sublime.",
       imagen: "https://cdn.mos.cms.futurecdn.net/xDhhYzmU9GvdH9pRFzpf9T.jpg"
     },
     {
       nombre: "Mortal Kombat 1",
       genero: "Lucha/Peleas",
-      puntuacion: 7,
+      puntuacion: 8.3,
       etiqueta: "🥋 Peleas/sangriento",
+      jugadores: "1-2",
+      dificultad: "Media",
+      descripcion: "Peleas intensas, combos explosivos y una presentación visual brutal.",
       imagen: "https://preview.redd.it/mortal-kombat-1-screenshots-i-honestly-like-it-v0-pirl215zotyd1.jpg?width=1080&crop=smart&auto=webp&s=81d13f4df19466e9715488417a535356f6399176"
     },
     {
@@ -60,32 +78,60 @@ function Home() {
       genero: "RPG",
       puntuacion: 9.1,
       etiqueta: "Mundo abierto",
+      jugadores: "1",
+      dificultad: "Media",
+      descripcion: "Historia profunda, decisiones importantes y un mundo enorme lleno de detalle.",
       imagen: "https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQt7QwNsxC0h8M9-k3qWKzg31jLBjWgPyoUnNlSlPGilX0LmTTd"
     },
     {
       nombre: "World of Warcraft",
       genero: "MMORPG",
-      puntuacion: 5.5,
+      puntuacion: 7.4,
       etiqueta: "Rol en linea",
+      jugadores: "1-40",
+      dificultad: "Media",
+      descripcion: "Gran comunidad, raids épicos y una progresión de personajes muy profunda.",
       imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7pALTskfSABdHirWcyFQWp8pW7BIRacoQMIFiBt39LmcghtfWXA2EG8Jk&s=10"
     },
     {
       nombre: "Hollow Knight",
       genero: "Metroidvania",
-      puntuacion: 9,
+      puntuacion: 9.0,
       etiqueta: "Indie/Desafiante",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Exploración magistral, un arte precioso y un desafío más que satisfactorio.",
       imagen: "https://i.pinimg.com/736x/e4/6c/d9/e46cd932609864801ce2ae8312faf855.jpg"
     },
     {
       nombre: "Hades",
       genero: "Roguelike",
-      puntuacion: 8.5,
+      puntuacion: 8.8,
       etiqueta: "Adictivo/Accion rapida",
+      jugadores: "1",
+      dificultad: "Media",
+      descripcion: "Runas constantes, mejora de habilidades y una historia muy bien ejecutada.",
       imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQs8c0h4-uK6k2EUYHHaQiWE9uuYfvX153YFOh5ufRiS5HBdbo-"
     }
   ];
 
   const generos = ["Todos", ...new Set(juegosDestacados.map((juego) => juego.genero))];
+
+  const barrasGeneros = [
+    { nombre: "Terror", color: "#ff4d4d" },
+    { nombre: "Shooter", color: "#ff8a3d" },
+    { nombre: "RPG", color: "#4cc9f0" },
+    { nombre: "Sandbox", color: "#7c4dff" },
+  ].map((genero) => {
+    const total = juegosDestacados.filter((juego) => juego.genero === genero.nombre).length;
+    const porcentaje = Math.max(18, Math.round((total / juegosDestacados.length) * 100 || 25));
+
+    return {
+      ...genero,
+      total,
+      porcentaje,
+    };
+  });
 
   const juegosFiltrados =
     generoActivo === "Todos"
@@ -207,6 +253,23 @@ function Home() {
             <button className="outline-button" onClick={() => navigate("/juegos")}>
               Ver todos →
             </button>
+          </div>
+
+          <div className="genre-bars">
+            {barrasGeneros.map((genero) => (
+              <div key={genero.nombre} className="genre-bar-item">
+                <div className="genre-bar-header">
+                  <span>{genero.nombre}</span>
+                  <strong>{genero.total}</strong>
+                </div>
+                <div className="genre-bar-track">
+                  <div
+                    className="genre-bar-fill"
+                    style={{ width: `${genero.porcentaje}%`, background: genero.color }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="games-grid">
