@@ -2,7 +2,6 @@ import { useState } from "react";
 import GameCard from "../components/GameCard";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router";
-import ParticlesBackground from "../components/ParticlesBackground";
 import minecraftImage from "../assets/hero.png";
 import "./Home.css";
 
@@ -115,7 +114,137 @@ function Home() {
     }
   ];
 
-  const generos = ["Todos", ...new Set(juegosDestacados.map((juego) => juego.genero))];
+  const juegosShooter = [
+    {
+      nombre: "Doom",
+      genero: "Shooter",
+      puntuacion: 8.5,
+      etiqueta: "Violencia sin filtro",
+      jugadores: "1-4",
+      dificultad: "Facil",
+      descripcion: "Acción intensa, armas devastadoras y un ritmo que no te deja respirar.",
+      imagen: "https://i.blogs.es/fc7ae1/doom-1/450_1000.webp"
+    },
+    {
+      nombre: "Call of Duty: Modern Warfare",
+      genero: "Shooter",
+      puntuacion: 8.7,
+      etiqueta: "Guerra moderna",
+      jugadores: "1-12",
+      dificultad: "Media",
+      descripcion: "Campaña cinematográfica, multijugador competitivo y acción sin pausa.",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT4PLmaGZ0Em7n9rFMRV78AWcioQTfWIdUwjfjStXnTrXyvw3k2vwetD5l3&s=10"
+    },
+  ]
+
+  const juegosTerror = [
+    {
+      nombre: "Silent Hill 2",
+      genero: "Terror",
+      puntuacion: 9.3,
+      etiqueta: "Horror psicologico",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Atmósfera inquietante, narrativa profunda y un terror que se queda contigo.",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ6xsyiSHQPtRwEOmuq0xi3AxRKIvvklqCjpslCUB4N8Y83ITj7hVEA_go&s=10"
+    },
+    {
+      nombre: "Outlast",
+      genero: "Terror",
+      puntuacion: 8.6,
+      etiqueta: "Horror de supervivencia",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Tensión constante, persecuciones aterradoras y un ambiente que te mantiene al borde del asiento.",
+      imagen: "https://store-images.s-microsoft.com/image/apps.52001.67759939744253232.91d27dff-a27e-44ea-9d15-3d3fc6acfd00.841c08cf-c100-4be3-abee-b444a2304b90"
+    },
+    {
+      nombre: "Resident Evil 7",
+      genero: "Terror",
+      puntuacion: 8.9,
+      etiqueta: "Horror en primera persona",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Inmersión total, tensión constante y un regreso a las raíces del terror.",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQaOo4xSmuY74eXCv5aw6qJohrwN1yeGVky4O8RaxE1PUysfVVdphgF_ra_&s=10"
+    }
+  ]
+
+  const juegosRPG = [
+    {
+      nombre: "Persona 5",
+      genero: "RPG",
+      puntuacion: 9.5,
+      etiqueta: "RPG japonés",
+      jugadores: "1",
+      dificultad: "Media",
+      descripcion: "Historia envolvente, personajes memorables y un sistema de combate estratégico.",
+      imagen: "https://m.media-amazon.com/images/M/MV5BNWRmYzE4NzAtY2Q5My00Mjc1LWJhNDgtMmRmNGQzMzMyYTJkXkEyXkFqcGc@._V1_FMjpg_UX1000_.jpg"
+    },
+    {
+      nombre: "Baldu´s Gate 3",
+      genero: "RPG",
+      puntuacion: 9.2,
+      etiqueta: "RPG occidental",
+      jugadores: "1-4",
+      dificultad: "Alta",
+      descripcion: "Exploración profunda, decisiones significativas y un mundo lleno de aventuras.",
+      imagen: "https://store-images.s-microsoft.com/image/apps.11593.13550459053619040.9c555c73-a698-4992-b0f3-c5084cf18b5e.82a9ea41-c628-4d02-8a0f-d0304eba31c7"
+    },
+    {
+      nombre: "Darkest Dungeon",
+      genero: "RPG",
+      puntuacion: 8.8,
+      etiqueta: "RPG táctico",
+      jugadores: "1",
+      dificultad: "Alta",
+      descripcion: "Gestión de recursos, combate estratégico y un desafío constante en un mundo oscuro.",
+      imagen: "https://i.ytimg.com/vi/MBo4rwZERM8/hq720.jpg?sqp=-oaymwEhCK4FEIIDSFryq4qpAxMIARUAAAAAGAElAADIQj0AgKJD&rs=AOn4CLC3MfenD3cSjkm5LyjPYhGtd6Y2Tg"
+    }
+  ]
+
+  const juegosCarreras = [
+    {
+      nombre: "Forza Horizon 5",
+      genero: "Carreras",
+      puntuacion: 9,
+      etiqueta: "Carreras de mundo abierto",
+      jugadores: "1-12",
+      dificultad: "Media",
+      descripcion: "Exploracion de mundo abierto, variedad de vehiculos y eventos emocionantes",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQL4hKrZ65FtYq3g4eUmzbfxPdkf-zfIhyNBw_X2ojLqm2-cOQo4OKfo3w&s=10"
+    },
+    {
+      nombre: "Gran Turismo 7",
+      genero: "Carreras",
+      puntuacion: 8.7,
+      etiqueta: "Simulador de carreras",
+      jugadores: "1-20",
+      dificultad: "Alta",
+      descripcion: "Simulación realista, amplia selección de autos y circuitos, y una experiencia de conducción auténtica.",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQUcvOyyAlvqigMnoErl9Nz42Hm6SfiFwUykJ2jMw0k42am48w1cGIeuDo&s=10"
+    },
+    {
+      nombre: "Mario Kart 8 Deluxe",
+      genero: "Carreras",
+      puntuacion: 8.5,
+      etiqueta: "Carreras arcade",
+      jugadores: "1-12",
+      dificultad: "Media",
+      descripcion: "Diversión para todos, personajes icónicos y circuitos llenos de acción y sorpresas.",
+      imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR5ktG_YR7ldiyaWxzsQK1DHU9ljqq2tGHVU_jko9KkQz-MQM2a3LSVMl1O&s=10"
+    }
+  ];
+
+  const todosLosJuegos = [
+    ...juegosDestacados,
+    ...juegosShooter,
+    ...juegosTerror,
+    ...juegosRPG,
+    ...juegosCarreras,
+  ].filter((juego) => Boolean(juego?.nombre) && Boolean(juego?.genero));
+
+  const generos = ["Todos", ...new Set(todosLosJuegos.map((juego) => juego.genero))];
 
   const barrasGeneros = [
     { nombre: "Terror", color: "#ff4d4d" },
@@ -123,8 +252,8 @@ function Home() {
     { nombre: "RPG", color: "#4cc9f0" },
     { nombre: "Sandbox", color: "#7c4dff" },
   ].map((genero) => {
-    const total = juegosDestacados.filter((juego) => juego.genero === genero.nombre).length;
-    const porcentaje = Math.max(18, Math.round((total / juegosDestacados.length) * 100 || 25));
+    const total = todosLosJuegos.filter((juego) => juego.genero === genero.nombre).length;
+    const porcentaje = Math.max(18, Math.round((total / todosLosJuegos.length) * 100 || 25));
 
     return {
       ...genero,
@@ -135,8 +264,35 @@ function Home() {
 
   const juegosFiltrados =
     generoActivo === "Todos"
-      ? juegosDestacados
-      : juegosDestacados.filter((juego) => juego.genero === generoActivo);
+      ? todosLosJuegos
+      : todosLosJuegos.filter((juego) => juego.genero === generoActivo);
+
+  const topsPorGenero = [
+    {
+      nombre: "Shooter",
+      titulo: "Top de juegos de Shooter",
+      color: "#ff8a3d",
+      juegos: juegosShooter.slice(0, 3),
+    },
+    {
+      nombre: "Terror",
+      titulo: "Top de juegos de Terror",
+      color: "#ff4d4d",
+      juegos: juegosTerror.slice(0, 3),
+    },
+    {
+      nombre: "RPG",
+      titulo: "Top de juegos de RPG",
+      color: "#4cc9f0",
+      juegos: juegosRPG.slice(0, 3),
+    },
+    {
+      nombre: "Sandbox",
+      titulo: "Top de juegos de Sandbox",
+      color: "#7c4dff",
+      juegos: juegosDestacados.filter((juego) => juego.genero === "Sandbox").slice(0, 3),
+    },
+  ];
 
   const cerrarSesion = () => {
     logout();
@@ -145,8 +301,6 @@ function Home() {
 
   return (
     <div className="home">
-      <ParticlesBackground />
-
       <header className="navbar">
         <div className="navbar-logo">
           <span className="logo-icon">🎮</span>
@@ -189,6 +343,48 @@ function Home() {
           <span className="genre-empty">Sin juegos aún</span>
         )}
       </div>
+
+      <section className="top-genres-section">
+        <div className="top-genres-header">
+          <div>
+            <span className="section-label">TOPS</span>
+            <h2>🎯 Géneros destacados</h2>
+          </div>
+        </div>
+
+        <div className="top-genres-grid">
+          {topsPorGenero.map((top) => (
+            <article
+              key={top.nombre}
+              className="top-genre-card"
+              style={{ borderColor: top.color }}
+            >
+              <div className="top-genre-head">
+                <span className="top-genre-label" style={{ color: top.color }}>
+                  {top.nombre}
+                </span>
+                <button
+                  className="mini-link-button"
+                  onClick={() => setGeneroActivo(top.nombre)}
+                >
+                  Ver más
+                </button>
+              </div>
+
+              <h3>{top.titulo}</h3>
+
+              <ul className="top-genre-list">
+                {top.juegos.map((juego) => (
+                  <li key={juego.nombre}>
+                    <span>{juego.nombre}</span>
+                    <strong>⭐ {juego.puntuacion}</strong>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <main>
         <section className="hero">
