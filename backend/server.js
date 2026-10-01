@@ -90,6 +90,130 @@ app.post("/register", (req, res) => {
     );
 
 });
+
+// Obtener todos los juegos
+app.get("/juegos", (req, res) => {
+    db.all("SELECT * FROM juegos ORDER BY id DESC", (err, rows) => {
+        if (err){
+            return res.status(500).json({
+                success: false,
+                mensaje: "Error al obtener los juegos",
+                error: err.message
+            });
+        }
+
+        return res.json({
+            success: true,
+            juegos: rows
+        });
+    }); 
+});
+
+// Obtener un juego por ID
+app.get("/juegos/:id", (req, res) => {
+    const { id } = req.params;
+    db.get("SELECT * FROM juegos WHERE id = ?", [id], (err, juegos) => {
+        if (err){
+            return res.status(500).json({
+                success: false,
+                mensaje: "Error al buscar el juego",
+                error: err.message
+            });
+        }
+
+        if (!juegos) {
+            return res.status(404).json({
+                success: false,
+                mensaje: "Juego no encontrado"
+          });
+        }
+
+        return res.json({
+            success: true,
+            juego: juegos
+        });
+    });
+});
+
+// Crear un juego nuevo
+app.post("/juegos", (req, res) => {
+    const { nombre, genero, puntuacion, plataforma, imagen, descripcion } = req.body;
+
+    db.run(
+        `
+        INSERT INTO juegos(nombre, genero, puntuacion, plataforma, imagen, descripcion)
+        VALUES(?, ?, ?, ?, ?, ?)
+        `,
+        [nombre, genero, puntuacion, plataforma, imagen, descripcion],
+        function (err) {
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "Error al crear el juego",
+                    error: err.message
+                });
+            }
+
+            return res.status(201).json({
+                success: true,
+                mensaje: "Juego creado correctamente",
+                id: this.lastID
+            });
+        }
+    );
+});
+
+// Editar un juego
+app.put("/juegos/:id", (req, res) => {
+    const { id } = req.params;
+    const { nombre, genero, puntuacion, plataforma, imagen, descripcion } = req.body;
+
+    db.run(
+        `
+        UPDATE juegos
+        SET nombre = ?, genero = ?, puntuacion = ?, plataforma = ?, imagen = ?, descripcion = ?
+        WHERE id = ?
+        `,
+        [nombre, genero, puntuacion, plataforma, imagen, descripcion, id],
+        function (err) {
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "Error al actualizar el juego",
+                    error: err.message
+                });
+            }
+
+            return res.json({
+                success: true,
+                mensaje: "Juego actualizado correctamente",
+                cambios: this.changes
+            });
+        }
+    );
+});
+
+// Eliminar un juego
+app.delete("/juegos/:id", (req, res) => {
+    const { id } = req.params;
+
+    db.run("DELETE FROM juegos WHERE id = ?", [id], function (err) {
+        if (err) {
+            return res.status(500).json({
+                success: false,
+                mensaje: "Error al eliminar el juego",
+                error: err.message
+            });
+        }
+
+        return res.json({
+            success: true,
+            mensaje: "Juego eliminado correctamente",
+            cambios: this.changes
+        });
+    });
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor iniciado en http://localhost:${PORT}`);
 });

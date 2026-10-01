@@ -2,7 +2,10 @@ import sqlite3 from "sqlite3";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
-const databasePath = resolve(dirname(fileURLToPath(import.meta.url)), "zenkai.db");
+const databasePath = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "zenkai.db"
+);
 
 const db = new sqlite3.Database(databasePath, (err) => {
 
@@ -34,6 +37,20 @@ const db = new sqlite3.Database(databasePath, (err) => {
                 `,
                 ["admin", "admin@gmail.com", "123456"]
             );
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS juegos (
+
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    genero TEXT NOT NULL,
+                    puntuacion REAL,
+                    plataforma TEXT,
+                    imagen TEXT,
+                    descripcion TEXT
+
+                )
+            `);
 
         });
 

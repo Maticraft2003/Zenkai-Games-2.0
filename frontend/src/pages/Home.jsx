@@ -327,65 +327,6 @@ function Home() {
         </div>
       </header>
 
-      <div className="genre-list">
-        {juegosDestacados.length > 0 ? (
-          generos.map((genero) => (
-            <button
-              key={genero}
-              type="button"
-              className={`genre-button ${generoActivo === genero ? "active" : ""}`}
-              onClick={() => setGeneroActivo(genero)}
-            >
-              {genero}
-            </button>
-          ))
-        ) : (
-          <span className="genre-empty">Sin juegos aún</span>
-        )}
-      </div>
-
-      <section className="top-genres-section">
-        <div className="top-genres-header">
-          <div>
-            <span className="section-label">TOPS</span>
-            <h2>🎯 Géneros destacados</h2>
-          </div>
-        </div>
-
-        <div className="top-genres-grid">
-          {topsPorGenero.map((top) => (
-            <article
-              key={top.nombre}
-              className="top-genre-card"
-              style={{ borderColor: top.color }}
-            >
-              <div className="top-genre-head">
-                <span className="top-genre-label" style={{ color: top.color }}>
-                  {top.nombre}
-                </span>
-                <button
-                  className="mini-link-button"
-                  onClick={() => setGeneroActivo(top.nombre)}
-                >
-                  Ver más
-                </button>
-              </div>
-
-              <h3>{top.titulo}</h3>
-
-              <ul className="top-genre-list">
-                {top.juegos.map((juego) => (
-                  <li key={juego.nombre}>
-                    <span>{juego.nombre}</span>
-                    <strong>⭐ {juego.puntuacion}</strong>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <main>
         <section className="hero">
           <div className="hero-content">
