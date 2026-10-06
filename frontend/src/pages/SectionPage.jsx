@@ -64,6 +64,56 @@ const juegos = [
     dificultad: "Alta",
     descripcion: "Exploración magistral, arte precioso y un desafío más que satisfactorio.",
     imagen: "https://i.pinimg.com/736x/e4/6c/d9/e46cd932609864801ce2ae8312faf855.jpg"
+  },
+  {
+    nombre: "Devil May Cry 5",
+    genero: "Hack and Slash",
+    puntuacion: 8.7,
+    etiqueta: "⚙️ Combate técnico",
+    jugadores: "1",
+    dificultad: "Alta",
+    descripcion: "Combos ultra vistosos, estilo impecable y una experiencia de acción sublime.",
+    imagen: "https://cdn.mos.cms.futurecdn.net/xDhhYzmU9GvdH9pRFzpf9T.jpg"
+  },
+  {
+    nombre: "Mortal Kombat 1",
+    genero: "Lucha/Peleas",
+    puntuacion: 8.3,
+    etiqueta: "🥋 Peleas/sangriento",
+    jugadores: "1-2",
+    dificultad: "Media",
+    descripcion: "Peleas intensas, combos explosivos y una presentación visual brutal.",
+    imagen: "https://preview.redd.it/mortal-kombat-1-screenshots-i-honestly-like-it-v0-pirl215zotyd1.jpg?width=1080&crop=smart&auto=webp&s=81d13f4df19466e9715488417a535356f6399176"
+  },
+  {
+    nombre: "World of Warcraft",
+    genero: "MMORPG",
+    puntuacion: 7.4,
+    etiqueta: "Rol en línea",
+    jugadores: "1-40",
+    dificultad: "Media",
+    descripcion: "Gran comunidad, raids épicos y una progresión de personajes muy profunda.",
+    imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7pALTskfSABdHirWcyFQWp8pW7BIRacoQMIFiBt39LmcghtfWXA2EG8Jk&s=10"
+  },
+  {
+    nombre: "Hades",
+    genero: "Roguelike",
+    puntuacion: 8.8,
+    etiqueta: "Adictivo/Acción rápida",
+    jugadores: "1",
+    dificultad: "Media",
+    descripcion: "Partidas dinámicas, mejora de habilidades y una historia muy bien ejecutada.",
+    imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQs8c0h4-uK6k2EUYHHaQiWE9uuYfvX153YFOh5ufRiS5HBdbo-"
+  },
+  {
+    nombre: "Forza Horizon 5",
+    genero: "Carreras",
+    puntuacion: 9.0,
+    etiqueta: "Carreras de mundo abierto",
+    jugadores: "1-12",
+    dificultad: "Media",
+    descripcion: "Exploración de mundo abierto, variedad de vehículos y eventos emocionantes.",
+    imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQL4hKrZ65FtYq3g4eUmzbfxPdkf-zfIhyNBw_X2ojLqm2-cOQo4OKfo3w&s=10"
   }
 ];
 
@@ -163,12 +213,9 @@ function SectionPage({ type = "juegos", title, subtitle }) {
   const [generoActivo, setGeneroActivo] = useState("Todos");
   const items = type === "juegos" ? juegos : contentByType[type] || contentByType.rankings;
 
-  const juegosFiltrados =
-    type === "juegos"
-      ? generoActivo === "Todos"
-        ? juegos
-        : juegos.filter((juego) => juego.genero === generoActivo)
-      : items;
+  const juegosFiltrados = generoActivo === "Todos"
+    ? juegos
+    : juegos.filter((juego) => juego.genero === generoActivo);
 
   const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero))];
 
@@ -206,19 +253,6 @@ function SectionPage({ type = "juegos", title, subtitle }) {
         </header>
 
         <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 20px 60px" }}>
-          <div className="genre-list" style={{ marginTop: "20px", marginBottom: "18px" }}>
-            {generos.map((genero) => (
-              <button
-                key={genero}
-                type="button"
-                className={`genre-button ${generoActivo === genero ? "active" : ""}`}
-                onClick={() => setGeneroActivo(genero)}
-              >
-                {genero}
-              </button>
-            ))}
-          </div>
-
           <section className="hero" style={{ minHeight: "460px" }}>
             <div className="hero-content">
               <p className="hero-tag">🎮 ZENKAI GAMES</p>
@@ -258,10 +292,34 @@ function SectionPage({ type = "juegos", title, subtitle }) {
               </button>
             </div>
 
-            <div className="games-grid">
-              {juegosFiltrados.map((juego) => (
-                <GameCard key={juego.nombre} juego={juego} />
+            <div className="genre-list" style={{ marginBottom: "18px" }}>
+              {generos.map((genero) => (
+                <button
+                  key={genero}
+                  type="button"
+                  className={`genre-button ${generoActivo === genero ? "active" : ""}`}
+                  aria-pressed={generoActivo === genero}
+                  onClick={() => setGeneroActivo(genero)}
+                >
+                  {genero}
+                </button>
               ))}
+            </div>
+
+            <p className="genre-filter-status" aria-live="polite">
+              {generoActivo === "Todos"
+                ? `Mostrando todos los juegos (${juegosFiltrados.length})`
+                : `Mostrando ${juegosFiltrados.length} juegos de ${generoActivo}`}
+            </p>
+
+            <div className="games-grid">
+              {juegosFiltrados.length > 0 ? (
+                juegosFiltrados.map((juego) => (
+                  <GameCard key={juego.nombre} juego={juego} />
+                ))
+              ) : (
+                <div className="empty-games">No hay juegos de este género todavía.</div>
+              )}
             </div>
           </section>
         </main>

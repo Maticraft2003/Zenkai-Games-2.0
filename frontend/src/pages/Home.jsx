@@ -246,17 +246,27 @@ function Home() {
 
   const generos = ["Todos", ...new Set(todosLosJuegos.map((juego) => juego.genero))];
 
-  const barrasGeneros = [
-    { nombre: "Terror", color: "#ff4d4d" },
-    { nombre: "Shooter", color: "#ff8a3d" },
-    { nombre: "RPG", color: "#4cc9f0" },
-    { nombre: "Sandbox", color: "#7c4dff" },
-  ].map((genero) => {
-    const total = todosLosJuegos.filter((juego) => juego.genero === genero.nombre).length;
+  const coloresGeneros = {
+    Terror: "#ff4d4d",
+    Shooter: "#ff8a3d",
+    RPG: "#4cc9f0",
+    Sandbox: "#7c4dff",
+    Carreras: "#38b000",
+    Acción: "#ff8a3d",
+    "Hack and Slash": "#ff8a3d",
+    "Lucha/Peleas": "#ff4d4d",
+    MMORPG: "#4cc9f0",
+    Metroidvania: "#7c4dff",
+    Roguelike: "#7c4dff",
+  };
+
+  const barrasGeneros = generos.slice(1).map((nombre) => {
+    const total = todosLosJuegos.filter((juego) => juego.genero === nombre).length;
     const porcentaje = Math.max(18, Math.round((total / todosLosJuegos.length) * 100 || 25));
 
     return {
-      ...genero,
+      nombre,
+      color: coloresGeneros[nombre] || "#7c4dff",
       total,
       porcentaje,
     };
@@ -393,8 +403,31 @@ function Home() {
           </div>
 
           <div className="genre-bars">
+            <button
+              type="button"
+              className={`genre-bar-item ${generoActivo === "Todos" ? "active" : ""}`}
+              aria-pressed={generoActivo === "Todos"}
+              onClick={() => setGeneroActivo("Todos")}
+            >
+              <div className="genre-bar-header">
+                <span>Todos</span>
+                <strong>{todosLosJuegos.length}</strong>
+              </div>
+              <div className="genre-bar-track">
+                <div
+                  className="genre-bar-fill"
+                  style={{ width: "100%", background: "#d10000" }}
+                />
+              </div>
+            </button>
             {barrasGeneros.map((genero) => (
-              <div key={genero.nombre} className="genre-bar-item">
+              <button
+                key={genero.nombre}
+                type="button"
+                className={`genre-bar-item ${generoActivo === genero.nombre ? "active" : ""}`}
+                aria-pressed={generoActivo === genero.nombre}
+                onClick={() => setGeneroActivo(genero.nombre)}
+              >
                 <div className="genre-bar-header">
                   <span>{genero.nombre}</span>
                   <strong>{genero.total}</strong>
@@ -405,7 +438,7 @@ function Home() {
                     style={{ width: `${genero.porcentaje}%`, background: genero.color }}
                   />
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -418,6 +451,11 @@ function Home() {
               <div className="empty-games">Sin juegos aún</div>
             )}
           </div>
+          <p className="genre-filter-status" aria-live="polite">
+            {generoActivo === "Todos"
+              ? `Mostrando todos los juegos (${juegosFiltrados.length})`
+              : `Mostrando ${juegosFiltrados.length} juegos de ${generoActivo}`}
+          </p>
         </section>
 
         <section className="ranking-section">
