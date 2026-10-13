@@ -1,6 +1,9 @@
+import { useState } from "react";
+
 function GameCard({ juego }) {
   const datos = juego ?? {};
   const puntuacion = typeof datos.puntuacion === "number" ? datos.puntuacion : 0;
+  const [expandida, setExpandida] = useState(false);
 
   const estadisticas = [
     { label: "Puntuación", value: `⭐ ${puntuacion.toFixed(1)}` },
@@ -9,7 +12,12 @@ function GameCard({ juego }) {
   ];
 
   return (
-    <article className="game-card">
+    <article
+      className={`game-card ${expandida ? "expanded" : ""}`}
+      role="group"
+      aria-expanded={expandida}
+      onClick={() => setExpandida((actual) => !actual)}
+    >
       <div className="game-card-image">
         <img src={datos.imagen} alt={datos.nombre || "Juego"} />
         <span className="game-card-tag">{datos.etiqueta || "Nuevo"}</span>
@@ -35,6 +43,41 @@ function GameCard({ juego }) {
             </div>
           ))}
         </div>
+
+        <button
+          type="button"
+          className="expand-hint"
+          aria-expanded={expandida}
+          onClick={(evento) => {
+            evento.stopPropagation();
+            setExpandida((actual) => !actual);
+          }}
+        >
+          {expandida ? "Contraer información" : "Ver toda la información"}
+        </button>
+
+        {expandida ? (
+          <div className="home-expanded-game-details">
+            <div>
+              <span>Etiqueta</span>
+              <strong>{datos.etiqueta || "Sin etiqueta"}</strong>
+            </div>
+            <div>
+              <span>Género</span>
+              <strong>{datos.genero || "Sin género"}</strong>
+            </div>
+            {datos.plataforma ? (
+              <div>
+                <span>Plataforma</span>
+                <strong>{datos.plataforma}</strong>
+              </div>
+            ) : null}
+            <div className="home-expanded-description">
+              <span>Descripción</span>
+              <p>{datos.descripcion || "Sin descripción disponible."}</p>
+            </div>
+          </div>
+        ) : null}
       </div>
     </article>
   );

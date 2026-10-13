@@ -1,4 +1,4 @@
-import db from "./database.js";
+import db, { databaseReady } from "./database.js";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -137,14 +137,14 @@ app.get("/juegos/:id", (req, res) => {
 
 // Crear un juego nuevo
 app.post("/juegos", (req, res) => {
-    const { nombre, genero, puntuacion, plataforma, imagen, descripcion } = req.body;
+    const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
 
     db.run(
         `
-        INSERT INTO juegos(nombre, genero, puntuacion, plataforma, imagen, descripcion)
-        VALUES(?, ?, ?, ?, ?, ?)
+        INSERT INTO juegos(nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
         `,
-        [nombre, genero, puntuacion, plataforma, imagen, descripcion],
+        [nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -166,15 +166,15 @@ app.post("/juegos", (req, res) => {
 // Editar un juego
 app.put("/juegos/:id", (req, res) => {
     const { id } = req.params;
-    const { nombre, genero, puntuacion, plataforma, imagen, descripcion } = req.body;
+    const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
 
     db.run(
         `
         UPDATE juegos
-        SET nombre = ?, genero = ?, puntuacion = ?, plataforma = ?, imagen = ?, descripcion = ?
+        SET nombre = ?, genero = ?, puntuacion = ?, plataforma = ?, etiqueta = ?, imagen = ?, descripcion = ?
         WHERE id = ?
         `,
-        [nombre, genero, puntuacion, plataforma, imagen, descripcion, id],
+        [nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion, id],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -214,6 +214,13 @@ app.delete("/juegos/:id", (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor iniciado en http://localhost:${PORT}`);
-});
+databaseReady
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Servidor iniciado en http://localhost:${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error("No se pudo inicializar la base de datos:", error.message);
+    process.exitCode = 1;
+  });

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import axios from "axios";
+import { useEffect, useState } from "react";
 import GameCard from "../components/GameCard";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router";
@@ -9,6 +10,29 @@ function Home() {
   const { usuario, logout } = useAuth();
   const navigate = useNavigate();
   const [generoActivo, setGeneroActivo] = useState("Todos");
+  const [juegosGuardados, setJuegosGuardados] = useState([]);
+  const [errorJuegos, setErrorJuegos] = useState("");
+
+  useEffect(() => {
+    let ignore = false;
+
+    axios.get("http://localhost:3001/juegos")
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !Array.isArray(respuesta.data.juegos)) {
+          throw new Error("La respuesta del servidor no contiene una lista de juegos.");
+        }
+
+        if (!ignore) setJuegosGuardados(respuesta.data.juegos);
+      })
+      .catch((error) => {
+        console.error("No se pudieron cargar los juegos guardados:", error);
+        if (!ignore) setErrorJuegos("No se pudieron cargar los juegos agregados al catálogo.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
 
   const juegosDestacados = [
@@ -236,13 +260,28 @@ function Home() {
     }
   ];
 
-  const todosLosJuegos = [
+  const juegosDelSitio = [
     ...juegosDestacados,
     ...juegosShooter,
     ...juegosTerror,
     ...juegosRPG,
     ...juegosCarreras,
   ].filter((juego) => Boolean(juego?.nombre) && Boolean(juego?.genero));
+
+  const juegosPorNombre = new Map(
+    juegosDelSitio.map((juego) => [juego.nombre.trim().toLocaleLowerCase(), juego])
+  );
+  juegosGuardados.forEach((juego) => {
+    if (!juego?.nombre || !juego?.genero) return;
+
+    juegosPorNombre.set(juego.nombre.trim().toLocaleLowerCase(), {
+      ...juego,
+      etiqueta: juego.etiqueta || "Nuevo",
+      puntuacion: Number(juego.puntuacion) || 0,
+    });
+  });
+
+  const todosLosJuegos = [...juegosPorNombre.values()];
 
   const generos = ["Todos", ...new Set(todosLosJuegos.map((juego) => juego.genero))];
 
@@ -397,10 +436,23 @@ function Home() {
               <h2>🎮 Juegos destacados</h2>
             </div>
 
-            <button className="outline-button" onClick={() => navigate("/juegos")}>
-              Ver todos →
-            </button>
+            <div className="games-section-actions">
+              <button
+                type="button"
+                className="add-game-button"
+                aria-label="Agregar nuevo juego"
+                title="Agregar nuevo juego"
+                onClick={() => navigate("/juegos", { state: { abrirFormulario: true } })}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+              <button className="outline-button" onClick={() => navigate("/juegos")}>
+                Ver todos →
+              </button>
+            </div>
           </div>
+
+          {errorJuegos ? <p className="games-load-error" role="status">{errorJuegos}</p> : null}
 
           <div className="genre-bars">
             <button
