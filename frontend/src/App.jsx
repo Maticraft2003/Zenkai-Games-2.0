@@ -43,6 +43,16 @@ function App() {
 
       {/* SECCIONES */}
       <Route path="/juegos" element={protegerRuta(<Juegos />)} />
+      <Route
+        path="/favoritos"
+        element={protegerRuta(
+          <SectionPage
+            type="favoritos"
+            title="Mis juegos favoritos"
+            subtitle="Tus juegos guardados, siempre a mano."
+          />
+        )}
+      />
 
       <Route
         path="/rankings"

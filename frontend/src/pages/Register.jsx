@@ -12,6 +12,11 @@ function Register() {
 
     const registrarUsuario = async () => {
 
+    if (password.length < 8 || new TextEncoder().encode(password).length > 72) {
+        alert("La contraseña debe tener al menos 8 caracteres y no superar los 72 bytes.");
+        return;
+    }
+
     try {
 
         const respuesta = await axios.post(
@@ -74,6 +79,9 @@ function Register() {
                     placeholder="Contraseña"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    minLength={8}
+                    maxLength={72}
+                    required
                 />
 
                 <button

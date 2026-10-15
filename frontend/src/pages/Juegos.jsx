@@ -3,13 +3,13 @@ import axios from "axios";
 import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "../context/useAuth";
 import catalogoJuegos, { buscarJuegoEnCatalogo } from "../data/gameCatalog";
+import GameCard from "../components/GameCard";
+import FavoriteButton from "../components/FavoriteButton";
 import "./Home.css";
 
 const estadoInicial = {
   nombre: "",
   genero: "",
-  etiqueta: "",
-  puntuacion: "",
   imagen: "",
   descripcion: "",
 };
@@ -22,9 +22,12 @@ function Juegos() {
   const [juegos, setJuegos] = useState([]);
   const [formulario, setFormulario] = useState(estadoInicial);
   const [editandoId, setEditandoId] = useState(null);
+  const [catalogoEnEdicionKey, setCatalogoEnEdicionKey] = useState(null);
   const [formularioAbierto, setFormularioAbierto] = useState(() => Boolean(location.state?.abrirFormulario));
   const [juegoExpandidoId, setJuegoExpandidoId] = useState(null);
   const [generoActivo, setGeneroActivo] = useState("Todos");
+  const [generoCatalogoActivo, setGeneroCatalogoActivo] = useState("Todos");
+  const [juegosCatalogoOcultos, setJuegosCatalogoOcultos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -34,9 +37,19 @@ function Juegos() {
     return respuesta.data?.juegos || [];
   };
 
+  const obtenerJuegosCatalogoOcultos = async () => {
+    const respuesta = await axios.get("http://localhost:3001/catalogo-juegos/ocultos");
+    return respuesta.data?.juegos || [];
+  };
+
   const cargarJuegos = async () => {
     try {
-      setJuegos(await obtenerJuegos());
+      const [juegosCargados, ocultos] = await Promise.all([
+        obtenerJuegos(),
+        obtenerJuegosCatalogoOcultos(),
+      ]);
+      setJuegos(juegosCargados);
+      setJuegosCatalogoOcultos(ocultos);
       setError("");
     } catch (err) {
       console.error(err);
@@ -47,9 +60,12 @@ function Juegos() {
   useEffect(() => {
     let ignore = false;
 
-    obtenerJuegos()
-      .then((juegosCargados) => {
-        if (!ignore) setJuegos(juegosCargados);
+    Promise.all([obtenerJuegos(), obtenerJuegosCatalogoOcultos()])
+      .then(([juegosCargados, ocultos]) => {
+        if (!ignore) {
+          setJuegos(juegosCargados);
+          setJuegosCatalogoOcultos(ocultos);
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -72,6 +88,65 @@ function Juegos() {
 
   const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero).filter(Boolean))];
   const juegosFiltrados = generoActivo === "Todos" ? juegos : juegos.filter((juego) => juego.genero === generoActivo);
+  const normalizarNombreJuego = (nombre) => nombre
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+  const juegosDelCatalogo = new Map(
+    catalogoJuegos.map((juego) => {
+      const catalogKey = normalizarNombreJuego(juego.nombre);
+      return [`catalogo:${catalogKey}`, { ...juego, catalog_key: catalogKey }];
+    })
+  );
+
+  juegos.forEach((juego) => {
+    if (juego.nombre && juego.genero) {
+      const catalogKey = juego.catalog_key || (buscarJuegoEnCatalogo(juego.nombre)
+        ? normalizarNombreJuego(juego.nombre)
+        : null);
+      const clave = catalogKey
+        ? `catalogo:${catalogKey}`
+        : `personalizado:${normalizarNombreJuego(juego.nombre)}`;
+      juegosDelCatalogo.set(clave, {
+        ...juegosDelCatalogo.get(clave),
+        ...juego,
+        catalog_key: catalogKey,
+      });
+    }
+  });
+
+  const juegosCatalogoOcultosSet = new Set(juegosCatalogoOcultos);
+  const todosLosJuegos = [...juegosDelCatalogo.values()].filter(
+    (juego) => !juego.catalog_key || !juegosCatalogoOcultosSet.has(juego.catalog_key)
+  );
+  const generosCatalogo = [...new Set(todosLosJuegos.map((juego) => juego.genero).filter(Boolean))];
+  const coloresGeneros = {
+    Terror: "#ff4d4d",
+    Shooter: "#ff8a3d",
+    RPG: "#4cc9f0",
+    Sandbox: "#7c4dff",
+    Carreras: "#38b000",
+    Acción: "#ff8a3d",
+    "Hack and Slash": "#ff8a3d",
+    "Lucha/Peleas": "#ff4d4d",
+    MMORPG: "#4cc9f0",
+    Metroidvania: "#7c4dff",
+    Roguelike: "#7c4dff",
+  };
+  const barrasGenerosCatalogo = generosCatalogo.map((nombre) => {
+    const total = todosLosJuegos.filter((juego) => juego.genero === nombre).length;
+
+    return {
+      nombre,
+      total,
+      porcentaje: Math.max(18, Math.round((total / todosLosJuegos.length) * 100)),
+      color: coloresGeneros[nombre] || "#7c4dff",
+    };
+  });
+  const juegosCatalogoFiltrados = generoCatalogoActivo === "Todos"
+    ? todosLosJuegos
+    : todosLosJuegos.filter((juego) => juego.genero === generoCatalogoActivo);
 
   const manejarCambio = (evento) => {
     const { name, value } = evento.target;
@@ -85,7 +160,7 @@ function Juegos() {
           ...actual,
           nombre: value,
           ...(nombreActualEstaEnCatalogo
-            ? { genero: "", etiqueta: "", imagen: "", descripcion: "" }
+            ? { genero: "", imagen: "", descripcion: "" }
             : {}),
         };
       }
@@ -94,7 +169,6 @@ function Juegos() {
         ...actual,
         nombre: value,
         genero: juegoEncontrado.genero,
-        etiqueta: juegoEncontrado.etiqueta,
         imagen: juegoEncontrado.imagen,
         descripcion: juegoEncontrado.descripcion,
       };
@@ -104,6 +178,7 @@ function Juegos() {
   const resetFormulario = () => {
     setFormulario(estadoInicial);
     setEditandoId(null);
+    setCatalogoEnEdicionKey(null);
     setFormularioAbierto(false);
     setError("");
   };
@@ -113,29 +188,26 @@ function Juegos() {
 
     const nombre = formulario.nombre.trim();
     const genero = formulario.genero.trim();
-    const etiqueta = formulario.etiqueta.trim();
-    const puntuacion = Number(formulario.puntuacion);
     const descripcion = formulario.descripcion.trim();
     const imagen = formulario.imagen.trim();
 
-    if (!nombre || !genero || !etiqueta || !formulario.puntuacion || !descripcion || !imagen) {
-      setError("Completá todos los campos, incluida la imagen si el juego no está en el catálogo.");
+    if (!nombre || !genero || !descripcion || !imagen) {
+      setError("Completá el nombre, el género, la imagen y la descripción.");
       return;
     }
 
-    if (!Number.isFinite(puntuacion) || puntuacion < 0 || puntuacion > 10) {
-      setError("La puntuación debe ser un número entre 0 y 10.");
-      return;
-    }
-
+    const juegoExistente = juegos.find((juego) => juego.id === editandoId);
+    const juegoCatalogoKey = catalogoEnEdicionKey
+      || (buscarJuegoEnCatalogo(nombre) ? normalizarNombreJuego(nombre) : null);
     const payload = {
       nombre,
       genero,
-      etiqueta,
-      puntuacion,
-      plataforma: "",
+      etiqueta: juegoExistente?.etiqueta || "",
+      puntuacion: juegoExistente?.puntuacion ?? null,
+      plataforma: juegoExistente?.plataforma || "",
       imagen,
       descripcion,
+      catalogKey: juegoCatalogoKey,
     };
 
     try {
@@ -160,11 +232,10 @@ function Juegos() {
 
   const editarJuego = (juego) => {
     setEditandoId(juego.id);
+    setCatalogoEnEdicionKey(juego.catalog_key || null);
     setFormulario({
       nombre: juego.nombre || "",
       genero: juego.genero || "",
-      etiqueta: juego.etiqueta || "",
-      puntuacion: juego.puntuacion ?? "",
       imagen: juego.imagen || "",
       descripcion: juego.descripcion || "",
     });
@@ -172,17 +243,27 @@ function Juegos() {
     setError("");
   };
 
-  const eliminarJuego = async (id) => {
+  const eliminarJuego = async (juego) => {
     const confirmar = window.confirm("¿Seguro que querés eliminar este juego?");
     if (!confirmar) return;
 
     try {
-      await axios.delete(`http://localhost:3001/juegos/${id}`);
+      const catalogKey = juego.catalog_key
+        || (buscarJuegoEnCatalogo(juego.nombre) ? normalizarNombreJuego(juego.nombre) : null);
+      if (juego.id) {
+        await axios.delete(`http://localhost:3001/juegos/${juego.id}`, {
+          data: { catalogKey },
+        });
+      } else if (catalogKey) {
+        await axios.delete(`http://localhost:3001/catalogo-juegos/${encodeURIComponent(catalogKey)}`);
+      } else {
+        throw new Error("No se pudo identificar el juego para eliminarlo.");
+      }
       await cargarJuegos();
-      if (editandoId === id) {
+      if (editandoId === juego.id) {
         resetFormulario();
       }
-      if (juegoExpandidoId === id) {
+      if (juegoExpandidoId === juego.id) {
         setJuegoExpandidoId(null);
       }
     } catch (err) {
@@ -208,6 +289,7 @@ function Juegos() {
           <button type="button" onClick={() => navigate("/home")}>Inicio</button>
           <button type="button" onClick={() => navigate("/juegos")}>Juegos</button>
           <button type="button" onClick={() => navigate("/rankings")}>Rankings</button>
+          <button type="button" onClick={() => navigate("/favoritos")}>Favoritos</button>
           <button type="button" onClick={() => navigate("/noticias")}>Noticias</button>
           <button type="button" onClick={() => navigate("/comunidad")}>Comunidad</button>
           <button type="button" onClick={() => navigate("/acerca-de")}>Acerca de</button>
@@ -259,7 +341,7 @@ function Juegos() {
                 onSubmit={guardarJuego}
               >
                 <div className="game-form-heading">
-                  <h3 id="game-form-title">{editandoId ? "Editar juego" : "Agregar nuevo juego"}</h3>
+                  <h3 id="game-form-title">{editandoId || catalogoEnEdicionKey ? "Editar juego" : "Agregar nuevo juego"}</h3>
                   <button type="button" className="modal-close-button" aria-label="Cerrar formulario" onClick={resetFormulario}>
                     ×
                   </button>
@@ -276,39 +358,13 @@ function Juegos() {
                       value={formulario.nombre}
                       onChange={manejarCambio}
                       placeholder="Ej: Minecraft"
-                      list="known-games"
                       required
                     />
-                    <datalist id="known-games">
-                      {catalogoJuegos.map((juego) => (
-                        <option key={juego.nombre} value={juego.nombre} />
-                      ))}
-                    </datalist>
                   </label>
 
                   <label>
                     <span>Género</span>
                     <input type="text" name="genero" value={formulario.genero} onChange={manejarCambio} placeholder="Ej: Arcade" required />
-                  </label>
-
-                  <label>
-                    <span>Etiqueta</span>
-                    <input type="text" name="etiqueta" value={formulario.etiqueta} onChange={manejarCambio} placeholder="Ej: Juego de arcade" required />
-                  </label>
-
-                  <label>
-                    <span>Puntuación</span>
-                    <input
-                      type="number"
-                      name="puntuacion"
-                      min="0"
-                      max="10"
-                      step="0.1"
-                      value={formulario.puntuacion}
-                      onChange={manejarCambio}
-                      placeholder="9.5"
-                      required
-                    />
                   </label>
 
                   <label className="full-width">
@@ -318,12 +374,12 @@ function Juegos() {
                       name="imagen"
                       value={formulario.imagen}
                       onChange={manejarCambio}
-                      placeholder="Se completa automáticamente para juegos del catálogo"
+                      placeholder="Pegá la URL de la carátula"
                       required
                     />
-                    {formulario.nombre && !buscarJuegoEnCatalogo(formulario.nombre) ? (
-                      <small className="catalog-hint">No está en el catálogo; podés pegar la URL de una imagen.</small>
-                    ) : null}
+                    <small className="catalog-hint">
+                      Los juegos del catálogo completan la imagen automáticamente; para otros, pegá su URL.
+                    </small>
                   </label>
 
                   {formulario.imagen ? (
@@ -351,7 +407,7 @@ function Juegos() {
 
                 <div className="form-actions">
                   <button type="submit" className="primary-button" disabled={guardando}>
-                    {guardando ? "Guardando..." : editandoId ? "Actualizar juego" : "Guardar juego"}
+                    {guardando ? "Guardando..." : editandoId || catalogoEnEdicionKey ? "Actualizar juego" : "Guardar juego"}
                   </button>
                   <button type="button" className="secondary-button" onClick={resetFormulario}>
                     Cancelar
@@ -390,15 +446,14 @@ function Juegos() {
                     >
                       <div className="game-card-image">
                         <img src={juego.imagen} alt={`Carátula de ${juego.nombre}`} />
-                        <span className="game-card-tag">{juego.etiqueta || "Juego"}</span>
                       </div>
                       <div className="game-card-info">
                         <div className="game-card-topline">
                           <span className="game-card-genre">{juego.genero || "Sin género"}</span>
-                          <span className="game-card-score">{Number(juego.puntuacion || 0).toFixed(1)}</span>
                         </div>
                         <h3>{juego.nombre}</h3>
                         <p className="game-card-description">{juego.descripcion || "Sin descripción disponible."}</p>
+                        <FavoriteButton juego={juego} />
                         <button
                           type="button"
                           className="expand-hint"
@@ -414,8 +469,6 @@ function Juegos() {
                         {juegoExpandidoId === juego.id ? (
                           <div className="expanded-game-details">
                             <div><span>Género</span><strong>{juego.genero || "Sin género"}</strong></div>
-                            <div><span>Etiqueta</span><strong>{juego.etiqueta || "Sin etiqueta"}</strong></div>
-                            <div><span>Puntuación</span><strong>⭐ {Number(juego.puntuacion || 0).toFixed(1)} / 10</strong></div>
                             {juego.plataforma ? <div><span>Plataforma</span><strong>{juego.plataforma}</strong></div> : null}
                             <div className="expanded-description"><span>Descripción</span><p>{juego.descripcion || "Sin descripción disponible."}</p></div>
                             <div className="crud-actions">
@@ -434,7 +487,7 @@ function Juegos() {
                                 className="logout-button danger-button"
                                 onClick={(evento) => {
                                   evento.stopPropagation();
-                                  eliminarJuego(juego.id);
+                                  eliminarJuego(juego);
                                 }}
                               >
                                 Eliminar
@@ -449,6 +502,73 @@ function Juegos() {
                   <div className="empty-games">No hay juegos cargados para este género.</div>
                 )}
               </div>
+          </div>
+        </section>
+
+        <section className="games-section catalog-browse-section">
+          <div className="section-header">
+            <div>
+              <p className="section-label">EXPLORÁ EL CATÁLOGO</p>
+              <h2>🎮 Todos los juegos</h2>
+            </div>
+          </div>
+
+          <div className="genre-bars">
+            <button
+              type="button"
+              className={`genre-bar-item ${generoCatalogoActivo === "Todos" ? "active" : ""}`}
+              aria-pressed={generoCatalogoActivo === "Todos"}
+              onClick={() => setGeneroCatalogoActivo("Todos")}
+            >
+              <div className="genre-bar-header">
+                <span>Todos</span>
+                <strong>{todosLosJuegos.length}</strong>
+              </div>
+              <div className="genre-bar-track">
+                <div className="genre-bar-fill" style={{ width: "100%", background: "#d10000" }} />
+              </div>
+            </button>
+            {barrasGenerosCatalogo.map((genero) => (
+              <button
+                key={genero.nombre}
+                type="button"
+                className={`genre-bar-item ${generoCatalogoActivo === genero.nombre ? "active" : ""}`}
+                aria-pressed={generoCatalogoActivo === genero.nombre}
+                onClick={() => setGeneroCatalogoActivo(genero.nombre)}
+              >
+                <div className="genre-bar-header">
+                  <span>{genero.nombre}</span>
+                  <strong>{genero.total}</strong>
+                </div>
+                <div className="genre-bar-track">
+                  <div
+                    className="genre-bar-fill"
+                    style={{ width: `${genero.porcentaje}%`, background: genero.color }}
+                  />
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <p className="genre-filter-status" aria-live="polite">
+            {generoCatalogoActivo === "Todos"
+              ? `Mostrando todos los juegos (${juegosCatalogoFiltrados.length})`
+              : `Mostrando ${juegosCatalogoFiltrados.length} juegos de ${generoCatalogoActivo}`}
+          </p>
+
+          <div className="games-grid">
+            {juegosCatalogoFiltrados.length > 0 ? (
+              juegosCatalogoFiltrados.map((juego) => (
+                <GameCard
+                  key={juego.catalog_key || juego.id || juego.nombre}
+                  juego={juego}
+                  onEdit={editarJuego}
+                  onDelete={eliminarJuego}
+                />
+              ))
+            ) : (
+              <div className="empty-games">No hay juegos en este género todavía.</div>
+            )}
           </div>
         </section>
       </main>

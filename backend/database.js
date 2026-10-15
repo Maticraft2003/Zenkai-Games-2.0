@@ -1,4 +1,5 @@
 import sqlite3 from "sqlite3";
+import bcrypt from "bcrypt";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -63,14 +64,128 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                 return;
                             }
 
+                            const inicializarTablasDeContenido = () => {
+                                db.run(
+                                    `CREATE TABLE IF NOT EXISTS noticias (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        title TEXT NOT NULL,
+                                        tag TEXT,
+                                        description TEXT NOT NULL,
+                                        meta TEXT,
+                                        accent TEXT
+                                    )`,
+                                    (newsTableError) => {
+                                        if (newsTableError) {
+                                            rechazarInicializacion(newsTableError);
+                                            return;
+                                        }
+
+                                        db.run(
+                                            `CREATE TABLE IF NOT EXISTS comunidad (
+                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                title TEXT NOT NULL,
+                                                tag TEXT,
+                                                description TEXT NOT NULL,
+                                                meta TEXT,
+                                                accent TEXT
+                                            )`,
+                                            (communityTableError) => {
+                                                if (communityTableError) {
+                                                    rechazarInicializacion(communityTableError);
+                                                    return;
+                                                }
+
+                                                db.run(
+                                                    `CREATE TABLE IF NOT EXISTS favoritos (
+                                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                        usuario_id INTEGER NOT NULL,
+                                                        juego_key TEXT NOT NULL,
+                                                        nombre TEXT NOT NULL,
+                                                        genero TEXT,
+                                                        imagen TEXT,
+                                                        descripcion TEXT,
+                                                        UNIQUE(usuario_id, juego_key)
+                                                    )`,
+                                                    (favoritesTableError) => {
+                                                        if (favoritesTableError) {
+                                                            rechazarInicializacion(favoritesTableError);
+                                                            return;
+                                                        }
+
+                                                        db.run(
+                                                            `CREATE TABLE IF NOT EXISTS juegos_catalogo_ocultos (
+                                                                juego_key TEXT PRIMARY KEY
+                                                            )`,
+                                                            (hiddenCatalogError) => {
+                                                                if (hiddenCatalogError) {
+                                                                    rechazarInicializacion(hiddenCatalogError);
+                                                                    return;
+                                                                }
+
+                                                                db.all("SELECT id, password FROM usuarios", async (usersError, users) => {
+                                                                    if (usersError) {
+                                                                        rechazarInicializacion(usersError);
+                                                                        return;
+                                                                    }
+
+                                                                    try {
+                                                                        const legacyUsers = users.filter(
+                                                                            (user) => !/^\$2[aby]\$/.test(user.password)
+                                                                        );
+
+                                                                        await Promise.all(legacyUsers.map(async (user) => {
+                                                                            const hashedPassword = await bcrypt.hash(user.password, 12);
+                                                                            await new Promise((resolveUpdate, rejectUpdate) => {
+                                                                                db.run(
+                                                                                    "UPDATE usuarios SET password = ? WHERE id = ?",
+                                                                                    [hashedPassword, user.id],
+                                                                                    (updateError) => {
+                                                                                        if (updateError) rejectUpdate(updateError);
+                                                                                        else resolveUpdate();
+                                                                                    }
+                                                                                );
+                                                                            });
+                                                                        }));
+
+                                                                        resolverInicializacion();
+                                                                    } catch (passwordMigrationError) {
+                                                                        rechazarInicializacion(passwordMigrationError);
+                                                                    }
+                                                                });
+                                                            }
+                                                        );
+                                                    }
+                                                );
+                                            }
+                                        );
+                                    }
+                                );
+                            };
+
                             db.all("PRAGMA table_info(juegos)", (tableError, columns) => {
                                 if (tableError) {
                                     rechazarInicializacion(tableError);
                                     return;
                                 }
 
+                                const asegurarCatalogKey = () => {
+                                    if (columns.some((column) => column.name === "catalog_key")) {
+                                        inicializarTablasDeContenido();
+                                        return;
+                                    }
+
+                                    db.run("ALTER TABLE juegos ADD COLUMN catalog_key TEXT", (migrationError) => {
+                                        if (migrationError) {
+                                            rechazarInicializacion(migrationError);
+                                            return;
+                                        }
+
+                                        inicializarTablasDeContenido();
+                                    });
+                                };
+
                                 if (columns.some((column) => column.name === "etiqueta")) {
-                                    resolverInicializacion();
+                                    asegurarCatalogKey();
                                     return;
                                 }
 
@@ -80,7 +195,7 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                         return;
                                     }
 
-                                    resolverInicializacion();
+                                    asegurarCatalogKey();
                                 });
                             });
                         }

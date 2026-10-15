@@ -316,32 +316,17 @@ function Home() {
       ? todosLosJuegos
       : todosLosJuegos.filter((juego) => juego.genero === generoActivo);
 
-  const topsPorGenero = [
-    {
-      nombre: "Shooter",
-      titulo: "Top de juegos de Shooter",
-      color: "#ff8a3d",
-      juegos: juegosShooter.slice(0, 3),
-    },
-    {
-      nombre: "Terror",
-      titulo: "Top de juegos de Terror",
-      color: "#ff4d4d",
-      juegos: juegosTerror.slice(0, 3),
-    },
-    {
-      nombre: "RPG",
-      titulo: "Top de juegos de RPG",
-      color: "#4cc9f0",
-      juegos: juegosRPG.slice(0, 3),
-    },
-    {
-      nombre: "Sandbox",
-      titulo: "Top de juegos de Sandbox",
-      color: "#7c4dff",
-      juegos: juegosDestacados.filter((juego) => juego.genero === "Sandbox").slice(0, 3),
-    },
-  ];
+  const nombresRankingPrincipal = new Set(["minecraft", "resident evil 4", "gta v"]);
+  const juegosGuardadosParaRanking = juegosGuardados
+    .filter((juego) => {
+      const nombreNormalizado = (juego.nombre || "")
+        .trim()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase();
+      return !nombresRankingPrincipal.has(nombreNormalizado);
+    })
+    .slice(0, 3);
 
   const cerrarSesion = () => {
     logout();
@@ -360,13 +345,14 @@ function Home() {
           <button onClick={() => navigate("/home")}>Inicio</button>
           <button onClick={() => navigate("/juegos")}>Juegos</button>
           <button onClick={() => navigate("/rankings")}>Rankings</button>
+          <button onClick={() => navigate("/favoritos")}>Favoritos</button>
           <button onClick={() => navigate("/noticias")}>Noticias</button>
           <button onClick={() => navigate("/comunidad")}>Comunidad</button>
           <button onClick={() => navigate("/acerca")}>Acerca de</button>
         </nav>
 
         <div className="navbar-user">
-          <button className="profile-button" onClick={() => navigate("/home")}>
+          <button className="profile-button" onClick={() => navigate("/perfil")}>
             👤 Mi Perfil
           </button>
 
@@ -540,6 +526,20 @@ function Home() {
               <span>GTA V</span>
               <b>9.2</b>
             </div>
+            {juegosGuardadosParaRanking.map((juego, index) => {
+              const puntuacion = juego.puntuacion === null || juego.puntuacion === undefined
+                || juego.puntuacion === ""
+                ? null
+                : Number(juego.puntuacion);
+
+              return (
+                <div className="ranking-item" key={juego.id}>
+                  <strong>#{index + 4}</strong>
+                  <span>{juego.nombre}</span>
+                  <b>{puntuacion !== null && Number.isFinite(puntuacion) ? puntuacion.toFixed(1) : "Nuevo"}</b>
+                </div>
+              );
+            })}
           </div>
         </section>
 

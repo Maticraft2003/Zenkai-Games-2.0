@@ -1,7 +1,10 @@
-import { useState } from "react";
+import axios from "axios";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../context/useAuth";
 import GameCard from "../components/GameCard";
+import FavoriteButton from "../components/FavoriteButton";
+import { useFavorites } from "../context/favoriteHooks";
 import "./Home.css";
 
 const juegos = [
@@ -209,15 +212,289 @@ const contentByType = {
 
 function SectionPage({ type = "juegos", title, subtitle }) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { usuario, login, logout } = useAuth();
+  const { favoritos, cargando: cargandoFavoritos, errorCarga: errorFavoritosCarga } = useFavorites();
   const [generoActivo, setGeneroActivo] = useState("Todos");
-  const items = type === "juegos" ? juegos : contentByType[type] || contentByType.rankings;
+  const [juegosGuardados, setJuegosGuardados] = useState([]);
+  const [errorJuegos, setErrorJuegos] = useState("");
+  const [publicaciones, setPublicaciones] = useState([]);
+  const [formularioContenido, setFormularioContenido] = useState({
+    title: "",
+    tag: "",
+    description: "",
+  });
+  const [publicacionEditandoId, setPublicacionEditandoId] = useState(null);
+  const [formularioContenidoAbierto, setFormularioContenidoAbierto] = useState(false);
+  const [guardandoContenido, setGuardandoContenido] = useState(false);
+  const [errorContenido, setErrorContenido] = useState("");
+  const [mensajePerfil, setMensajePerfil] = useState("");
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+  const [formularioPerfil, setFormularioPerfil] = useState({
+    username: usuario?.username || "",
+    email: usuario?.email || "",
+    currentPassword: "",
+    newPassword: "",
+  });
+
+  useEffect(() => {
+    if (type !== "perfil" || !usuario?.id) return undefined;
+
+    let ignore = false;
+
+    axios.get(`http://localhost:3001/perfil/${usuario.id}`)
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !respuesta.data.usuario) {
+          throw new Error("La respuesta del servidor no contiene el perfil.");
+        }
+
+        if (!ignore) {
+          setFormularioPerfil((actual) => ({
+            ...actual,
+            username: respuesta.data.usuario.username || "",
+            email: respuesta.data.usuario.email || "",
+          }));
+        }
+      })
+      .catch((error) => {
+        console.error("No se pudo cargar el perfil:", error);
+        if (!ignore) setErrorContenido("No se pudieron cargar los datos de la cuenta.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [type, usuario?.id]);
+
+  useEffect(() => {
+    if (type !== "rankings") return undefined;
+
+    let ignore = false;
+
+    axios.get("http://localhost:3001/juegos")
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !Array.isArray(respuesta.data.juegos)) {
+          throw new Error("La respuesta del servidor no contiene una lista de juegos.");
+        }
+
+        if (!ignore) setJuegosGuardados(respuesta.data.juegos);
+      })
+      .catch((error) => {
+        console.error("No se pudieron cargar los juegos para rankings:", error);
+        if (!ignore) setErrorJuegos("No se pudieron cargar los juegos del catálogo.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [type]);
+
+  useEffect(() => {
+    if (type !== "noticias" && type !== "comunidad") return undefined;
+
+    let ignore = false;
+    const claveRespuesta = type === "noticias" ? "noticias" : "publicaciones";
+
+    axios.get(`http://localhost:3001/${type}`)
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !Array.isArray(respuesta.data[claveRespuesta])) {
+          throw new Error("La respuesta del servidor no contiene una lista de publicaciones.");
+        }
+
+        if (!ignore) setPublicaciones(respuesta.data[claveRespuesta]);
+      })
+      .catch((error) => {
+        console.error(`No se pudo cargar ${type}:`, error);
+        if (!ignore) setErrorContenido(`No se pudo cargar el contenido de ${title}.`);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [type, title]);
 
   const juegosFiltrados = generoActivo === "Todos"
     ? juegos
     : juegos.filter((juego) => juego.genero === generoActivo);
 
   const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero))];
+
+  const normalizarNombre = (nombre) => nombre
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+  const juegosGuardadosPorNombre = new Map(
+    juegosGuardados.map((juego) => [normalizarNombre(juego.nombre || ""), juego])
+  );
+  const rankingBase = contentByType.rankings.map((item, index) => {
+    const nombreBase = item.title.replace(/^#\d+\s*/, "");
+    const juegoGuardado = juegosGuardadosPorNombre.get(normalizarNombre(nombreBase));
+    if (!juegoGuardado) return item;
+
+    const puntuacion = juegoGuardado.puntuacion === null || juegoGuardado.puntuacion === undefined
+      || juegoGuardado.puntuacion === ""
+      ? null
+      : Number(juegoGuardado.puntuacion);
+
+    return {
+      ...item,
+      title: `#${index + 1} ${juegoGuardado.nombre}`,
+      tag: juegoGuardado.genero || item.tag,
+      description: juegoGuardado.descripcion || item.description,
+      meta: puntuacion === null || !Number.isFinite(puntuacion)
+        ? "Sin puntuación"
+        : `${puntuacion.toFixed(1)}/10`,
+      image: juegoGuardado.imagen,
+    };
+  });
+  const juegosAgregadosAlRanking = juegosGuardados
+    .filter((juego) => !contentByType.rankings.some((item) => {
+      const nombreBase = item.title.replace(/^#\d+\s*/, "");
+      return normalizarNombre(nombreBase) === normalizarNombre(juego.nombre || "");
+    }))
+    .map((juego, index) => {
+      const puntuacion = juego.puntuacion === null || juego.puntuacion === undefined || juego.puntuacion === ""
+        ? null
+        : Number(juego.puntuacion);
+
+      return {
+        ...juego,
+        title: `#${rankingBase.length + index + 1} ${juego.nombre}`,
+        tag: juego.genero || "Catálogo",
+        description: juego.descripcion || "Juego agregado al catálogo de Zenkai Games.",
+        meta: puntuacion === null || !Number.isFinite(puntuacion)
+          ? "Sin puntuación"
+          : `${puntuacion.toFixed(1)}/10`,
+        image: juego.imagen,
+      };
+    });
+  const items = type === "rankings"
+    ? [...rankingBase, ...juegosAgregadosAlRanking]
+    : type === "juegos"
+      ? juegos
+      : type === "noticias" || type === "comunidad"
+        ? [...publicaciones, ...(contentByType[type] || [])]
+        : type === "perfil"
+          ? []
+          : contentByType[type] || contentByType.rankings;
+
+  const resetFormularioContenido = () => {
+    setFormularioContenido({ title: "", tag: "", description: "" });
+    setPublicacionEditandoId(null);
+    setFormularioContenidoAbierto(false);
+    setErrorContenido("");
+  };
+
+  const cargarPublicaciones = async () => {
+    const claveRespuesta = type === "noticias" ? "noticias" : "publicaciones";
+    const respuesta = await axios.get(`http://localhost:3001/${type}`);
+
+    if (!respuesta.data?.success || !Array.isArray(respuesta.data[claveRespuesta])) {
+      throw new Error("La respuesta del servidor no contiene una lista de publicaciones.");
+    }
+
+    setPublicaciones(respuesta.data[claveRespuesta]);
+  };
+
+  const guardarPublicacion = async (evento) => {
+    evento.preventDefault();
+
+    const titleValue = formularioContenido.title.trim();
+    const tag = formularioContenido.tag.trim();
+    const description = formularioContenido.description.trim();
+
+    if (!titleValue || !description) {
+      setErrorContenido("Completá el título y la descripción.");
+      return;
+    }
+
+    const payload = {
+      title: titleValue,
+      tag,
+      description,
+      meta: type === "noticias" ? "Reciente" : "Nuevo",
+      accent: type === "noticias" ? "#60a5fa" : "#f472b6",
+    };
+
+    try {
+      setGuardandoContenido(true);
+      setErrorContenido("");
+
+      if (publicacionEditandoId) {
+        await axios.put(`http://localhost:3001/${type}/${publicacionEditandoId}`, payload);
+      } else {
+        await axios.post(`http://localhost:3001/${type}`, payload);
+      }
+
+      await cargarPublicaciones();
+      resetFormularioContenido();
+    } catch (error) {
+      console.error(`No se pudo guardar en ${type}:`, error);
+      setErrorContenido("No se pudo guardar. Revisá los datos e intentá nuevamente.");
+    } finally {
+      setGuardandoContenido(false);
+    }
+  };
+
+  const editarPublicacion = (publicacion) => {
+    setPublicacionEditandoId(publicacion.id);
+    setFormularioContenido({
+      title: publicacion.title || "",
+      tag: publicacion.tag || "",
+      description: publicacion.description || "",
+    });
+    setFormularioContenidoAbierto(true);
+    setErrorContenido("");
+  };
+
+  const eliminarPublicacion = async (id) => {
+    const confirmar = window.confirm("¿Seguro que querés eliminar esta publicación?");
+    if (!confirmar) return;
+
+    try {
+      await axios.delete(`http://localhost:3001/${type}/${id}`);
+      await cargarPublicaciones();
+    } catch (error) {
+      console.error(`No se pudo eliminar de ${type}:`, error);
+      setErrorContenido("No se pudo eliminar la publicación.");
+    }
+  };
+
+  const guardarPerfil = async (evento) => {
+    evento.preventDefault();
+
+    if (!usuario?.id || !formularioPerfil.currentPassword) {
+      setErrorContenido("Ingresá tu contraseña actual para guardar los cambios.");
+      return;
+    }
+
+    try {
+      setGuardandoPerfil(true);
+      setErrorContenido("");
+      setMensajePerfil("");
+
+      const respuesta = await axios.patch(`http://localhost:3001/perfil/${usuario.id}`, {
+        username: formularioPerfil.username.trim(),
+        email: formularioPerfil.email.trim(),
+        currentPassword: formularioPerfil.currentPassword,
+        newPassword: formularioPerfil.newPassword,
+      });
+
+      if (!respuesta.data?.success || !respuesta.data.usuario) {
+        throw new Error("La respuesta del servidor no contiene el perfil actualizado.");
+      }
+
+      login(respuesta.data.usuario);
+      setFormularioPerfil((actual) => ({ ...actual, currentPassword: "", newPassword: "" }));
+      setMensajePerfil("Tu perfil se actualizó correctamente.");
+    } catch (error) {
+      console.error("No se pudo actualizar el perfil:", error);
+      setErrorContenido(error.response?.data?.mensaje || "No se pudo actualizar el perfil.");
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  };
+
 
   const cerrarSesion = () => {
     logout();
@@ -237,6 +514,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
             <button onClick={() => navigate("/home")}>Inicio</button>
             <button onClick={() => navigate("/juegos")}>Juegos</button>
             <button onClick={() => navigate("/rankings")}>Rankings</button>
+            <button onClick={() => navigate("/favoritos")}>Favoritos</button>
             <button onClick={() => navigate("/noticias")}>Noticias</button>
             <button onClick={() => navigate("/comunidad")}>Comunidad</button>
             <button onClick={() => navigate("/acerca-de")}>Acerca de</button>
@@ -339,6 +617,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
           <button onClick={() => navigate("/home")}>Inicio</button>
           <button onClick={() => navigate("/juegos")}>Juegos</button>
           <button onClick={() => navigate("/rankings")}>Rankings</button>
+          <button onClick={() => navigate("/favoritos")}>Favoritos</button>
           <button onClick={() => navigate("/noticias")}>Noticias</button>
           <button onClick={() => navigate("/comunidad")}>Comunidad</button>
           <button onClick={() => navigate("/acerca-de")}>Acerca de</button>
@@ -359,12 +638,151 @@ function SectionPage({ type = "juegos", title, subtitle }) {
           <div>
             <p className="section-label">ZENKAI</p>
             <h2>{title}</h2>
+            {subtitle ? <p className="genre-filter-status">{subtitle}</p> : null}
           </div>
+          {type === "noticias" || type === "comunidad" ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setFormularioContenido({ title: "", tag: "", description: "" });
+                setPublicacionEditandoId(null);
+                setFormularioContenidoAbierto(true);
+                setErrorContenido("");
+              }}
+            >
+              {type === "noticias" ? "Agregar noticia" : "Crear publicación"}
+            </button>
+          ) : null}
         </section>
 
+        {type === "rankings" && errorJuegos ? (
+          <p className="games-load-error" role="status">{errorJuegos}</p>
+        ) : null}
+        {(type === "noticias" || type === "comunidad" || type === "perfil") && errorContenido ? (
+          <p className="games-load-error" role="alert">{errorContenido}</p>
+        ) : null}
+        {type === "perfil" ? (
+          <section className="game-form section-content-form">
+            <p className="section-label">TU CUENTA</p>
+            <h3>Datos de perfil</h3>
+            <p className="genre-filter-status">ID de usuario: {usuario?.id}</p>
+            {mensajePerfil ? <p className="catalog-hint" role="status">{mensajePerfil}</p> : null}
+            <form onSubmit={guardarPerfil}>
+              <div className="form-grid">
+                <label className="full-width">
+                  <span>Nombre de usuario</span>
+                  <input
+                    type="text"
+                    value={formularioPerfil.username}
+                    onChange={(evento) => setFormularioPerfil((actual) => ({ ...actual, username: evento.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="full-width">
+                  <span>Correo electrónico</span>
+                  <input
+                    type="email"
+                    value={formularioPerfil.email}
+                    onChange={(evento) => setFormularioPerfil((actual) => ({ ...actual, email: evento.target.value }))}
+                    required
+                  />
+                </label>
+                <label className="full-width">
+                  <span>Contraseña actual (para confirmar)</span>
+                  <input
+                    type="password"
+                    value={formularioPerfil.currentPassword}
+                    onChange={(evento) => setFormularioPerfil((actual) => ({ ...actual, currentPassword: evento.target.value }))}
+                    autoComplete="current-password"
+                    required
+                  />
+                </label>
+                <label className="full-width">
+                  <span>Nueva contraseña (opcional)</span>
+                  <input
+                    type="password"
+                    value={formularioPerfil.newPassword}
+                    onChange={(evento) => setFormularioPerfil((actual) => ({ ...actual, newPassword: evento.target.value }))}
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={72}
+                    placeholder="Dejala vacía si no querés cambiarla"
+                  />
+                </label>
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="primary-button" disabled={guardandoPerfil}>
+                  {guardandoPerfil ? "Guardando..." : "Guardar perfil"}
+                </button>
+              </div>
+            </form>
+          </section>
+        ) : null}
+
+        {formularioContenidoAbierto && (type === "noticias" || type === "comunidad") ? (
+          <form className="game-form section-content-form" onSubmit={guardarPublicacion}>
+            <h3>{publicacionEditandoId ? "Editar contenido" : type === "noticias" ? "Nueva noticia" : "Nueva publicación"}</h3>
+            <div className="form-grid">
+              <label className="full-width">
+                <span>Título</span>
+                <input
+                  type="text"
+                  value={formularioContenido.title}
+                  onChange={(evento) => setFormularioContenido((actual) => ({ ...actual, title: evento.target.value }))}
+                  required
+                />
+              </label>
+              <label className="full-width">
+                <span>{type === "noticias" ? "Categoría" : "Tema"}</span>
+                <input
+                  type="text"
+                  value={formularioContenido.tag}
+                  onChange={(evento) => setFormularioContenido((actual) => ({ ...actual, tag: evento.target.value }))}
+                  placeholder={type === "noticias" ? "Ej: Lanzamientos" : "Ej: General"}
+                />
+              </label>
+              <label className="full-width">
+                <span>Descripción</span>
+                <textarea
+                  rows="4"
+                  value={formularioContenido.description}
+                  onChange={(evento) => setFormularioContenido((actual) => ({ ...actual, description: evento.target.value }))}
+                  required
+                />
+              </label>
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="primary-button" disabled={guardandoContenido}>
+                {guardandoContenido ? "Guardando..." : publicacionEditandoId ? "Actualizar" : "Publicar"}
+              </button>
+              <button type="button" className="secondary-button" onClick={resetFormularioContenido}>
+                Cancelar
+              </button>
+            </div>
+          </form>
+        ) : null}
+
         <div className="games-grid">
-          {items.map((item, index) => (
+          {type === "favoritos" ? (
+            cargandoFavoritos ? (
+              <div className="empty-games">Cargando tus favoritos...</div>
+            ) : errorFavoritosCarga ? (
+              <div className="empty-games" role="alert">{errorFavoritosCarga}</div>
+            ) : favoritos.length > 0 ? (
+              favoritos.map((juego) => <GameCard key={juego.juego_key} juego={juego} />)
+            ) : (
+              <div className="empty-games">
+                Todavía no guardaste juegos. Usá la estrella en Inicio, Juegos o Rankings para agregarlos.
+              </div>
+            )
+          ) : items.map((item, index) => (
             <article className="game-card" key={`${item.title || item.nombre || item.tag}-${index}`}>
+              {item.image ? (
+                <div className="game-card-image">
+                  <img src={item.image} alt={`Carátula de ${item.title || item.nombre}`} />
+                </div>
+              ) : null}
               <div className="game-card-info">
                 <div className="game-card-topline">
                   <span className="game-card-genre">{item.tag || item.genero || "SECCIÓN"}</span>
@@ -372,6 +790,31 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                 </div>
                 <h3>{item.title || item.nombre}</h3>
                 <p className="game-card-description">{item.description || item.descripcion}</p>
+                {type === "rankings" ? (
+                  <FavoriteButton
+                    overlay={Boolean(item.image || item.imagen)}
+                    juego={{
+                      nombre: (item.title || item.nombre || "").replace(/^#\d+\s*/, ""),
+                      genero: item.tag || item.genero || "",
+                      imagen: item.image || item.imagen || "",
+                      descripcion: item.description || item.descripcion || "",
+                    }}
+                  />
+                ) : null}
+                {(type === "noticias" || type === "comunidad") && item.id ? (
+                  <div className="crud-actions">
+                    <button type="button" className="secondary-button" onClick={() => editarPublicacion(item)}>
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="logout-button danger-button"
+                      onClick={() => eliminarPublicacion(item.id)}
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </article>
           ))}

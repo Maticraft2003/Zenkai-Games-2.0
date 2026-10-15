@@ -282,6 +282,9 @@
   width: 260px;
   height: 260px;
   object-fit: cover;
+  filter: sepia(0.28) saturate(1.2) hue-rotate(325deg)
+    drop-shadow(0 0 14px rgba(255, 0, 0, 0.8))
+    drop-shadow(0 0 32px rgba(209, 0, 0, 0.55));
   border-radius: 22px;
   border: 1px solid rgba(157, 0, 0, 0.7);
   box-shadow:
@@ -990,6 +993,18 @@
   color: #fecaca;
 }
 
+.game-card-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.game-card-actions > button {
+  flex: 1 1 110px;
+  padding: 10px 14px;
+  font: inherit;
+}
+
 @media (max-width: 980px) {
   .games-grid .game-card.expanded {
     grid-column: auto;
@@ -1241,6 +1256,72 @@
 
 .game-card button:hover {
   background: #700000;
+}
+
+.favorite-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 4px 0 10px;
+}
+
+.favorite-control.overlay {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  min-height: 0;
+  margin: 0;
+}
+
+.favorite-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 50%;
+  background: rgba(12, 12, 12, 0.86);
+  color: #ffd166;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.game-card .favorite-button:hover,
+.game-card .favorite-button.active {
+  background: rgba(255, 209, 102, 0.2);
+  box-shadow: 0 0 16px rgba(255, 209, 102, 0.2);
+  transform: scale(1.06);
+}
+
+.favorite-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
+}
+
+.favorite-button:focus-visible {
+  outline: 2px solid #ffd166;
+  outline-offset: 3px;
+}
+
+.favorite-error {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 6px 8px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+  background: #1a0909;
+  color: #fecaca;
+  font-size: 12px;
 }
 
 .ranking-section {
