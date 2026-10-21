@@ -4,14 +4,20 @@ import GameCard from "../components/GameCard";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router";
 import minecraftImage from "../assets/hero.png";
+import catalogoJuegos from "../data/gameCatalog";
+import { coincideBusquedaJuego, normalizarClaveJuego } from "../utils/gameKey";
 import "./Home.css";
 
 function Home() {
   const { usuario, logout } = useAuth();
   const navigate = useNavigate();
   const [generoActivo, setGeneroActivo] = useState("Todos");
+  const [busquedaJuegos, setBusquedaJuegos] = useState("");
   const [juegosGuardados, setJuegosGuardados] = useState([]);
   const [errorJuegos, setErrorJuegos] = useState("");
+  const [juegosRecomendados, setJuegosRecomendados] = useState([]);
+  const [cargandoRecomendados, setCargandoRecomendados] = useState(true);
+  const [errorRecomendados, setErrorRecomendados] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -27,6 +33,30 @@ function Home() {
       .catch((error) => {
         console.error("No se pudieron cargar los juegos guardados:", error);
         if (!ignore) setErrorJuegos("No se pudieron cargar los juegos agregados al catálogo.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+
+    axios.get("http://localhost:3001/engagement/juegos/recomendados")
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !Array.isArray(respuesta.data.juegos)) {
+          throw new Error("La respuesta no contiene las recomendaciones.");
+        }
+
+        if (!ignore) setJuegosRecomendados(respuesta.data.juegos);
+      })
+      .catch((error) => {
+        console.error("No se pudieron cargar las recomendaciones:", error);
+        if (!ignore) setErrorRecomendados("No se pudieron cargar las recomendaciones.");
+      })
+      .finally(() => {
+        if (!ignore) setCargandoRecomendados(false);
       });
 
     return () => {
@@ -311,10 +341,17 @@ function Home() {
     };
   });
 
-  const juegosFiltrados =
-    generoActivo === "Todos"
-      ? todosLosJuegos
-      : todosLosJuegos.filter((juego) => juego.genero === generoActivo);
+  const juegosParaBusqueda = busquedaJuegos.trim()
+    ? [...new Map(
+      [...catalogoJuegos, ...todosLosJuegos]
+        .filter((juego) => typeof juego?.nombre === "string" && juego.nombre.trim())
+        .map((juego) => [normalizarClaveJuego(juego.nombre), juego])
+    ).values()]
+    : todosLosJuegos;
+  const juegosFiltrados = juegosParaBusqueda.filter((juego) => (
+    (generoActivo === "Todos" || juego.genero === generoActivo)
+      && coincideBusquedaJuego(juego, busquedaJuegos)
+  ));
 
   const nombresRankingPrincipal = new Set(["minecraft", "resident evil 4", "gta v"]);
   const juegosGuardadosParaRanking = juegosGuardados
@@ -440,6 +477,25 @@ function Home() {
 
           {errorJuegos ? <p className="games-load-error" role="status">{errorJuegos}</p> : null}
 
+          <div className="game-search">
+            <label htmlFor="home-game-search">Buscar juegos</label>
+            <div className="game-search-control">
+              <input
+                id="home-game-search"
+                type="search"
+                value={busquedaJuegos}
+                onChange={(evento) => setBusquedaJuegos(evento.target.value)}
+                placeholder="Nombre, género o descripción..."
+                autoComplete="off"
+              />
+              {busquedaJuegos ? (
+                <button type="button" className="game-search-clear" onClick={() => setBusquedaJuegos("")}>
+                  Limpiar
+                </button>
+              ) : null}
+            </div>
+          </div>
+
           <div className="genre-bars">
             <button
               type="button"
@@ -486,14 +542,45 @@ function Home() {
                 <GameCard key={juego.nombre} juego={juego} />
               ))
             ) : (
-              <div className="empty-games">Sin juegos aún</div>
+              <div className="empty-games">
+                {busquedaJuegos.trim()
+                  ? "No se encontraron juegos con esa búsqueda."
+                  : "Sin juegos aún"}
+              </div>
             )}
           </div>
           <p className="genre-filter-status" aria-live="polite">
-            {generoActivo === "Todos"
-              ? `Mostrando todos los juegos (${juegosFiltrados.length})`
-              : `Mostrando ${juegosFiltrados.length} juegos de ${generoActivo}`}
+            {busquedaJuegos.trim()
+              ? `Se encontraron ${juegosFiltrados.length} juegos${generoActivo === "Todos" ? "" : ` de ${generoActivo}`}`
+              : generoActivo === "Todos"
+                ? `Mostrando todos los juegos (${juegosFiltrados.length})`
+                : `Mostrando ${juegosFiltrados.length} juegos de ${generoActivo}`}
           </p>
+        </section>
+
+        <section className="games-section recommended-section">
+          <div className="section-header">
+            <div>
+              <p className="section-label">POPULARIDAD DE LA COMUNIDAD</p>
+              <h2>✨ Recomendados</h2>
+              <p className="genre-filter-status">Ordenados por visitas y me gusta de cada juego.</p>
+            </div>
+          </div>
+
+          {errorRecomendados ? <p className="games-load-error" role="alert">{errorRecomendados}</p> : null}
+          {cargandoRecomendados ? (
+            <div className="empty-games">Cargando recomendaciones...</div>
+          ) : juegosRecomendados.length > 0 ? (
+            <div className="games-grid">
+              {juegosRecomendados.map((juego) => (
+                <GameCard key={juego.juego_key} juego={juego} />
+              ))}
+            </div>
+          ) : (
+            <div className="empty-games">
+              Todavía no hay visitas ni me gusta suficientes para recomendar juegos. Explorá una página de juego para empezar.
+            </div>
+          )}
         </section>
 
         <section className="ranking-section">

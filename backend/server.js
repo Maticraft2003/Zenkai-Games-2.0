@@ -9,7 +9,37 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
+
+const validarDatosJuego = (datos) => {
+    const camposObligatorios = [
+        ["nombre", "El nombre"],
+        ["genero", "El género"],
+        ["imagen", "La imagen"],
+        ["descripcion", "La descripción"]
+    ];
+
+    for (const [campo, etiqueta] of camposObligatorios) {
+        if (typeof datos?.[campo] !== "string" || !datos[campo].trim()) {
+            return `${etiqueta} es obligatorio.`;
+        }
+    }
+
+    const limites = [
+        ["nombre", 255, "El nombre"],
+        ["genero", 120, "El género"],
+        ["imagen", 7 * 1024 * 1024, "La imagen"],
+        ["descripcion", 10000, "La descripción"]
+    ];
+
+    for (const [campo, maximo, etiqueta] of limites) {
+        if (datos[campo].trim().length > maximo) {
+            return `${etiqueta} supera el máximo permitido de ${maximo} caracteres.`;
+        }
+    }
+
+    return null;
+};
 
 // Ruta de prueba
 app.get("/", (req, res) => {
@@ -305,6 +335,191 @@ app.delete("/catalogo-juegos/:juegoKey", (req, res) => {
     );
 });
 
+const normalizarClaveJuego = (nombre) => nombre
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
+
+app.get("/engagement/juegos/recomendados", (req, res) => {
+    db.all(
+        `SELECT visitas.juego_key, visitas.nombre, visitas.genero, visitas.imagen,
+                visitas.descripcion, visitas.visitas,
+                COUNT(juegos_likes.id) AS likes,
+                visitas.visitas + COUNT(juegos_likes.id) AS interes_total
+         FROM juegos_visitas AS visitas
+         LEFT JOIN juegos_likes ON juegos_likes.juego_key = visitas.juego_key
+         GROUP BY visitas.juego_key
+         ORDER BY interes_total DESC, visitas.visitas DESC, visitas.nombre COLLATE NOCASE ASC
+         LIMIT 6`,
+        (err, juegos) => {
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudieron cargar las recomendaciones."
+                });
+            }
+
+            return res.json({ success: true, juegos });
+        }
+    );
+});
+
+app.get("/engagement/juegos/:gameKey", (req, res) => {
+    const gameKey = normalizarClaveJuego(req.params.gameKey || "");
+    const usuarioId = Number(req.query.usuarioId);
+
+    if (!gameKey) {
+        return res.status(400).json({ success: false, mensaje: "El juego no es válido." });
+    }
+
+    db.get(
+        `SELECT ? AS juego_key,
+                (SELECT nombre FROM juegos_visitas WHERE juego_key = ?) AS nombre,
+                (SELECT genero FROM juegos_visitas WHERE juego_key = ?) AS genero,
+                (SELECT imagen FROM juegos_visitas WHERE juego_key = ?) AS imagen,
+                (SELECT descripcion FROM juegos_visitas WHERE juego_key = ?) AS descripcion,
+                COALESCE((SELECT visitas FROM juegos_visitas WHERE juego_key = ?), 0) AS visitas,
+                (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = ?) AS likes,
+                EXISTS(
+                    SELECT 1 FROM juegos_likes
+                    WHERE juego_key = ? AND usuario_id = ?
+                ) AS liked_by_user`,
+        [
+            gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0,
+        ],
+        (err, juego) => {
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudieron cargar las estadísticas del juego."
+                });
+            }
+
+            return res.json({ success: true, juego });
+        }
+    );
+});
+
+app.post("/engagement/juegos/:gameKey/visita", (req, res) => {
+    const nombre = typeof req.body?.juego?.nombre === "string" ? req.body.juego.nombre.trim() : "";
+    const gameKey = normalizarClaveJuego(req.params.gameKey || "");
+    const genero = typeof req.body?.juego?.genero === "string" ? req.body.juego.genero.trim() : "";
+    const imagen = typeof req.body?.juego?.imagen === "string" ? req.body.juego.imagen.trim() : "";
+    const descripcion = typeof req.body?.juego?.descripcion === "string" ? req.body.juego.descripcion.trim() : "";
+    const usuarioId = Number(req.body?.usuarioId);
+    const usuarioIdValido = Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0;
+
+    if (!nombre || !gameKey || normalizarClaveJuego(nombre) !== gameKey) {
+        return res.status(400).json({ success: false, mensaje: "No se pudo identificar el juego." });
+    }
+
+    db.run(
+        `INSERT INTO juegos_visitas(juego_key, nombre, genero, imagen, descripcion, visitas)
+         VALUES(?, ?, ?, ?, ?, 1)
+         ON CONFLICT(juego_key) DO UPDATE SET
+            nombre = excluded.nombre,
+            genero = excluded.genero,
+            imagen = excluded.imagen,
+            descripcion = excluded.descripcion,
+            visitas = juegos_visitas.visitas + 1`,
+        [gameKey, nombre, genero, imagen, descripcion],
+        (err) => {
+            if (err) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudo registrar la visita."
+                });
+            }
+
+            db.get(
+                `SELECT visitas.juego_key, visitas.nombre, visitas.genero, visitas.imagen,
+                        visitas.descripcion, visitas.visitas,
+                        (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = visitas.juego_key) AS likes,
+                        EXISTS(
+                            SELECT 1 FROM juegos_likes
+                            WHERE juego_key = visitas.juego_key AND usuario_id = ?
+                        ) AS liked_by_user,
+                        visitas.visitas + (
+                            SELECT COUNT(*) FROM juegos_likes WHERE juego_key = visitas.juego_key
+                        ) AS interes_total
+                 FROM juegos_visitas AS visitas
+                 WHERE visitas.juego_key = ?`,
+                [usuarioIdValido, gameKey],
+                (statsError, juego) => {
+                    if (statsError) {
+                        return res.status(500).json({
+                            success: false,
+                            mensaje: "La visita se registró, pero no se pudieron cargar las estadísticas."
+                        });
+                    }
+
+                    return res.json({ success: true, juego });
+                }
+            );
+        }
+    );
+});
+
+app.post("/engagement/juegos/:gameKey/like", (req, res) => {
+    const gameKey = normalizarClaveJuego(req.params.gameKey || "");
+    const usuarioId = Number(req.body?.usuarioId);
+
+    if (!gameKey || !Number.isInteger(usuarioId) || usuarioId < 1) {
+        return res.status(400).json({ success: false, mensaje: "El juego o la cuenta no son válidos." });
+    }
+
+    db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
+        if (userError) {
+            return res.status(500).json({ success: false, mensaje: "No se pudo verificar la cuenta." });
+        }
+        if (!usuario) {
+            return res.status(404).json({ success: false, mensaje: "No se encontró la cuenta." });
+        }
+
+        db.run(
+            "INSERT OR IGNORE INTO juegos_likes(juego_key, usuario_id) VALUES(?, ?)",
+            [gameKey, usuarioId],
+            (likeError) => {
+                if (likeError) {
+                    return res.status(500).json({ success: false, mensaje: "No se pudo dar me gusta." });
+                }
+
+                return res.json({ success: true, mensaje: "Me gusta guardado." });
+            }
+        );
+    });
+});
+
+app.delete("/engagement/juegos/:gameKey/like", (req, res) => {
+    const gameKey = normalizarClaveJuego(req.params.gameKey || "");
+    const usuarioId = Number(req.query.usuarioId);
+
+    if (!gameKey || !Number.isInteger(usuarioId) || usuarioId < 1) {
+        return res.status(400).json({ success: false, mensaje: "El juego o la cuenta no son válidos." });
+    }
+
+    db.run(
+        "DELETE FROM juegos_likes WHERE juego_key = ? AND usuario_id = ?",
+        [gameKey, usuarioId],
+        (err) => {
+            if (err) {
+                return res.status(500).json({ success: false, mensaje: "No se pudo quitar el me gusta." });
+            }
+
+            return res.json({ success: true, mensaje: "Me gusta quitado." });
+        }
+    );
+});
+
 // Obtener un juego por ID
 app.get("/juegos/:id", (req, res) => {
     const { id } = req.params;
@@ -333,6 +548,11 @@ app.get("/juegos/:id", (req, res) => {
 
 // Crear un juego nuevo
 app.post("/juegos", (req, res) => {
+    const errorValidacion = validarDatosJuego(req.body);
+    if (errorValidacion) {
+        return res.status(400).json({ success: false, mensaje: errorValidacion });
+    }
+
     const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
 
@@ -341,7 +561,7 @@ app.post("/juegos", (req, res) => {
         INSERT INTO juegos(nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion, catalog_key)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        [nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion, catalogKey],
+        [nombre.trim(), genero.trim(), puntuacion, plataforma, etiqueta, imagen.trim(), descripcion.trim(), catalogKey],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -380,6 +600,11 @@ app.post("/juegos", (req, res) => {
 
 // Editar un juego
 app.put("/juegos/:id", (req, res) => {
+    const errorValidacion = validarDatosJuego(req.body);
+    if (errorValidacion) {
+        return res.status(400).json({ success: false, mensaje: errorValidacion });
+    }
+
     const { id } = req.params;
     const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
@@ -390,7 +615,7 @@ app.put("/juegos/:id", (req, res) => {
         SET nombre = ?, genero = ?, puntuacion = ?, plataforma = ?, etiqueta = ?, imagen = ?, descripcion = ?, catalog_key = ?
         WHERE id = ?
         `,
-        [nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion, catalogKey, id],
+        [nombre.trim(), genero.trim(), puntuacion, plataforma, etiqueta, imagen.trim(), descripcion.trim(), catalogKey, id],
         function (err) {
             if (err) {
                 return res.status(500).json({
@@ -578,7 +803,15 @@ app.delete("/usuarios/:usuarioId/favoritos/:juegoKey", (req, res) => {
 
 const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
     app.get(`/${ruta}`, (req, res) => {
-        db.all(`SELECT * FROM ${tabla} ORDER BY id DESC`, (err, rows) => {
+        const consulta = ruta === "comunidad"
+            ? `SELECT comunidad.*,
+                      (SELECT COUNT(*) FROM comunidad_comentarios
+                       WHERE publicacion_id = comunidad.id) AS comentarios_count
+               FROM comunidad
+               ORDER BY id DESC`
+            : `SELECT * FROM ${tabla} ORDER BY id DESC`;
+
+        db.all(consulta, (err, rows) => {
             if (err) {
                 return res.status(500).json({
                     success: false,
@@ -593,6 +826,159 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             });
         });
     });
+
+    if (ruta === "comunidad") {
+        app.get("/comunidad/:publicacionId/comentarios", (req, res) => {
+            const publicacionId = Number(req.params.publicacionId);
+            const usuarioId = Number(req.query.usuarioId);
+
+            if (!Number.isInteger(publicacionId) || publicacionId < 1) {
+                return res.status(400).json({ success: false, mensaje: "La publicación no es válida." });
+            }
+
+            db.all(
+                `SELECT comentarios.id, comentarios.publicacion_id, comentarios.usuario_id,
+                        usuarios.username, comentarios.contenido, comentarios.created_at,
+                        (SELECT COUNT(*) FROM comunidad_comentarios_likes
+                         WHERE comentario_id = comentarios.id) AS likes_count,
+                        EXISTS(
+                            SELECT 1 FROM comunidad_comentarios_likes
+                            WHERE comentario_id = comentarios.id AND usuario_id = ?
+                        ) AS liked_by_user
+                 FROM comunidad_comentarios AS comentarios
+                 JOIN usuarios ON usuarios.id = comentarios.usuario_id
+                 WHERE comentarios.publicacion_id = ?
+                 ORDER BY comentarios.id ASC`,
+                [Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0, publicacionId],
+                (err, comentarios) => {
+                    if (err) {
+                        return res.status(500).json({
+                            success: false,
+                            mensaje: "No se pudieron cargar los comentarios."
+                        });
+                    }
+
+                    return res.json({ success: true, comentarios });
+                }
+            );
+        });
+
+        app.post("/comunidad/:publicacionId/comentarios", (req, res) => {
+            const publicacionId = Number(req.params.publicacionId);
+            const usuarioId = Number(req.body?.usuarioId);
+            const contenido = typeof req.body?.contenido === "string" ? req.body.contenido.trim() : "";
+
+            if (!Number.isInteger(publicacionId) || publicacionId < 1
+                || !Number.isInteger(usuarioId) || usuarioId < 1
+                || !contenido || contenido.length > 1000) {
+                return res.status(400).json({
+                    success: false,
+                    mensaje: "Escribí un comentario de hasta 1000 caracteres."
+                });
+            }
+
+            db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
+                if (userError) {
+                    return res.status(500).json({ success: false, mensaje: "No se pudo verificar la cuenta." });
+                }
+                if (!usuario) {
+                    return res.status(404).json({ success: false, mensaje: "No se encontró la cuenta." });
+                }
+
+                db.get("SELECT id FROM comunidad WHERE id = ?", [publicacionId], (postError, publicacion) => {
+                    if (postError) {
+                        return res.status(500).json({ success: false, mensaje: "No se pudo consultar la publicación." });
+                    }
+                    if (!publicacion) {
+                        return res.status(404).json({ success: false, mensaje: "No se encontró la publicación." });
+                    }
+
+                    db.run(
+                        `INSERT INTO comunidad_comentarios(publicacion_id, usuario_id, contenido)
+                         VALUES(?, ?, ?)`,
+                        [publicacionId, usuarioId, contenido],
+                        function (insertError) {
+                            if (insertError) {
+                                return res.status(500).json({
+                                    success: false,
+                                    mensaje: "No se pudo guardar el comentario."
+                                });
+                            }
+
+                            return res.status(201).json({
+                                success: true,
+                                mensaje: "Comentario publicado.",
+                                id: this.lastID
+                            });
+                        }
+                    );
+                });
+            });
+        });
+
+        app.post("/comunidad/comentarios/:comentarioId/like", (req, res) => {
+            const comentarioId = Number(req.params.comentarioId);
+            const usuarioId = Number(req.body?.usuarioId);
+
+            if (!Number.isInteger(comentarioId) || comentarioId < 1
+                || !Number.isInteger(usuarioId) || usuarioId < 1) {
+                return res.status(400).json({ success: false, mensaje: "El comentario o la cuenta no son válidos." });
+            }
+
+            db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
+                if (userError) {
+                    return res.status(500).json({ success: false, mensaje: "No se pudo verificar la cuenta." });
+                }
+                if (!usuario) {
+                    return res.status(404).json({ success: false, mensaje: "No se encontró la cuenta." });
+                }
+
+                db.get("SELECT id FROM comunidad_comentarios WHERE id = ?", [comentarioId], (commentError, comentario) => {
+                    if (commentError) {
+                        return res.status(500).json({ success: false, mensaje: "No se pudo consultar el comentario." });
+                    }
+                    if (!comentario) {
+                        return res.status(404).json({ success: false, mensaje: "No se encontró el comentario." });
+                    }
+
+                    db.run(
+                        `INSERT OR IGNORE INTO comunidad_comentarios_likes(comentario_id, usuario_id)
+                         VALUES(?, ?)`,
+                        [comentarioId, usuarioId],
+                        (likeError) => {
+                            if (likeError) {
+                                return res.status(500).json({ success: false, mensaje: "No se pudo dar like." });
+                            }
+
+                            return res.json({ success: true, mensaje: "Like guardado." });
+                        }
+                    );
+                });
+            });
+        });
+
+        app.delete("/comunidad/comentarios/:comentarioId/like", (req, res) => {
+            const comentarioId = Number(req.params.comentarioId);
+            const usuarioId = Number(req.query.usuarioId);
+
+            if (!Number.isInteger(comentarioId) || comentarioId < 1
+                || !Number.isInteger(usuarioId) || usuarioId < 1) {
+                return res.status(400).json({ success: false, mensaje: "El comentario o la cuenta no son válidos." });
+            }
+
+            db.run(
+                "DELETE FROM comunidad_comentarios_likes WHERE comentario_id = ? AND usuario_id = ?",
+                [comentarioId, usuarioId],
+                (err) => {
+                    if (err) {
+                        return res.status(500).json({ success: false, mensaje: "No se pudo quitar el like." });
+                    }
+
+                    return res.json({ success: true, mensaje: "Like quitado." });
+                }
+            );
+        });
+    }
 
     app.post(`/${ruta}`, (req, res) => {
         const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";

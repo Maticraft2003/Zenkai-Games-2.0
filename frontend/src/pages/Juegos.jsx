@@ -5,6 +5,7 @@ import { useAuth } from "../context/useAuth";
 import catalogoJuegos, { buscarJuegoEnCatalogo } from "../data/gameCatalog";
 import GameCard from "../components/GameCard";
 import FavoriteButton from "../components/FavoriteButton";
+import { coincideBusquedaJuego } from "../utils/gameKey";
 import "./Home.css";
 
 const estadoInicial = {
@@ -13,6 +14,9 @@ const estadoInicial = {
   imagen: "",
   descripcion: "",
 };
+
+const TAMANO_MAXIMO_IMAGEN = 5 * 1024 * 1024;
+const TIPOS_IMAGEN_PERMITIDOS = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
 
 function Juegos() {
   const navigate = useNavigate();
@@ -27,6 +31,7 @@ function Juegos() {
   const [juegoExpandidoId, setJuegoExpandidoId] = useState(null);
   const [generoActivo, setGeneroActivo] = useState("Todos");
   const [generoCatalogoActivo, setGeneroCatalogoActivo] = useState("Todos");
+  const [busquedaJuegos, setBusquedaJuegos] = useState("");
   const [juegosCatalogoOcultos, setJuegosCatalogoOcultos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -87,7 +92,10 @@ function Juegos() {
   }, [location.pathname, location.state, navigate]);
 
   const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero).filter(Boolean))];
-  const juegosFiltrados = generoActivo === "Todos" ? juegos : juegos.filter((juego) => juego.genero === generoActivo);
+  const juegosFiltrados = juegos.filter((juego) => (
+    (generoActivo === "Todos" || juego.genero === generoActivo)
+      && coincideBusquedaJuego(juego, busquedaJuegos)
+  ));
   const normalizarNombreJuego = (nombre) => nombre
     .trim()
     .normalize("NFD")
@@ -144,9 +152,10 @@ function Juegos() {
       color: coloresGeneros[nombre] || "#7c4dff",
     };
   });
-  const juegosCatalogoFiltrados = generoCatalogoActivo === "Todos"
-    ? todosLosJuegos
-    : todosLosJuegos.filter((juego) => juego.genero === generoCatalogoActivo);
+  const juegosCatalogoFiltrados = todosLosJuegos.filter((juego) => (
+    (generoCatalogoActivo === "Todos" || juego.genero === generoCatalogoActivo)
+      && coincideBusquedaJuego(juego, busquedaJuegos)
+  ));
 
   const manejarCambio = (evento) => {
     const { name, value } = evento.target;
@@ -173,6 +182,45 @@ function Juegos() {
         descripcion: juegoEncontrado.descripcion,
       };
     });
+  };
+
+  const manejarPegadoImagen = (evento) => {
+    const datosPortapapeles = evento.clipboardData;
+    const archivoDesdeItems = Array.from(datosPortapapeles?.items || [])
+      .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+      ?.getAsFile();
+    const archivo = archivoDesdeItems || Array.from(datosPortapapeles?.files || [])
+      .find((archivoPortapapeles) => archivoPortapapeles.type.startsWith("image/"));
+
+    if (!archivo) return;
+
+    evento.preventDefault();
+    setError("");
+
+    if (!TIPOS_IMAGEN_PERMITIDOS.includes(archivo.type)) {
+      setError("Ese formato de imagen no es compatible. Pegá una imagen PNG, JPG, WEBP, GIF o AVIF.");
+      return;
+    }
+
+    if (archivo.size > TAMANO_MAXIMO_IMAGEN) {
+      setError("La imagen pegada supera el límite de 5 MB.");
+      return;
+    }
+
+    const lector = new FileReader();
+    lector.onload = () => {
+      if (typeof lector.result !== "string") {
+        setError("No se pudo leer la imagen pegada.");
+        return;
+      }
+
+      setFormulario((actual) => ({ ...actual, imagen: lector.result }));
+    };
+    lector.onerror = () => {
+      console.error("No se pudo leer la imagen del portapapeles:", lector.error);
+      setError("No se pudo leer la imagen pegada. Intentá copiarla nuevamente.");
+    };
+    lector.readAsDataURL(archivo);
   };
 
   const resetFormulario = () => {
@@ -224,7 +272,10 @@ function Juegos() {
       resetFormulario();
     } catch (err) {
       console.error(err);
-      setError("No se pudo guardar el juego. Revisá los datos e intentá nuevamente.");
+      setError(
+        err.response?.data?.mensaje
+          || "No se pudo guardar el juego. Revisá los datos e intentá nuevamente."
+      );
     } finally {
       setGuardando(false);
     }
@@ -326,6 +377,25 @@ function Juegos() {
             </button>
           </div>
 
+          <div className="game-search">
+            <label htmlFor="games-page-search">Buscar en todos los juegos</label>
+            <div className="game-search-control">
+              <input
+                id="games-page-search"
+                type="search"
+                value={busquedaJuegos}
+                onChange={(evento) => setBusquedaJuegos(evento.target.value)}
+                placeholder="Nombre, género o descripción..."
+                autoComplete="off"
+              />
+              {busquedaJuegos ? (
+                <button type="button" className="game-search-clear" onClick={() => setBusquedaJuegos("")}>
+                  Limpiar
+                </button>
+              ) : null}
+            </div>
+          </div>
+
           {formularioAbierto ? (
             <div
               className="game-modal-backdrop"
@@ -358,27 +428,31 @@ function Juegos() {
                       value={formulario.nombre}
                       onChange={manejarCambio}
                       placeholder="Ej: Minecraft"
+                      maxLength={255}
                       required
                     />
                   </label>
 
                   <label>
                     <span>Género</span>
-                    <input type="text" name="genero" value={formulario.genero} onChange={manejarCambio} placeholder="Ej: Arcade" required />
+                    <input type="text" name="genero" value={formulario.genero} onChange={manejarCambio} placeholder="Ej: Arcade" maxLength={120} required />
                   </label>
 
                   <label className="full-width">
-                    <span>Imagen (URL)</span>
+                    <span>Imagen</span>
                     <input
-                      type="url"
+                      type="text"
                       name="imagen"
                       value={formulario.imagen}
                       onChange={manejarCambio}
-                      placeholder="Pegá la URL de la carátula"
+                      onPaste={manejarPegadoImagen}
+                      placeholder="Pegá una URL o copiá y pegá una imagen"
+                      maxLength={7 * 1024 * 1024}
                       required
                     />
                     <small className="catalog-hint">
-                      Los juegos del catálogo completan la imagen automáticamente; para otros, pegá su URL.
+                      Pegá una URL o copiá una imagen y pegala aquí (PNG, JPG, WEBP, GIF o AVIF; máximo 5 MB).
+                      Los juegos del catálogo completan la imagen automáticamente.
                     </small>
                   </label>
 
@@ -400,6 +474,7 @@ function Juegos() {
                       onChange={manejarCambio}
                       placeholder="La descripción se completa automáticamente para juegos del catálogo."
                       rows="4"
+                      maxLength={10000}
                       required
                     />
                   </label>
@@ -477,6 +552,18 @@ function Juegos() {
                                 className="secondary-button"
                                 onClick={(evento) => {
                                   evento.stopPropagation();
+                                  navigate(`/juego/${encodeURIComponent(normalizarNombreJuego(juego.nombre))}`, {
+                                    state: { juego },
+                                  });
+                                }}
+                              >
+                                Ver página del juego
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={(evento) => {
+                                  evento.stopPropagation();
                                   editarJuego(juego);
                                 }}
                               >
@@ -499,7 +586,11 @@ function Juegos() {
                     </article>
                   ))
                 ) : (
-                  <div className="empty-games">No hay juegos cargados para este género.</div>
+                  <div className="empty-games">
+                    {busquedaJuegos.trim()
+                      ? "No se encontraron juegos guardados con esa búsqueda."
+                      : "No hay juegos cargados para este género."}
+                  </div>
                 )}
               </div>
           </div>
@@ -551,9 +642,11 @@ function Juegos() {
           </div>
 
           <p className="genre-filter-status" aria-live="polite">
-            {generoCatalogoActivo === "Todos"
-              ? `Mostrando todos los juegos (${juegosCatalogoFiltrados.length})`
-              : `Mostrando ${juegosCatalogoFiltrados.length} juegos de ${generoCatalogoActivo}`}
+            {busquedaJuegos.trim()
+              ? `Se encontraron ${juegosCatalogoFiltrados.length} juegos${generoCatalogoActivo === "Todos" ? "" : ` de ${generoCatalogoActivo}`}`
+              : generoCatalogoActivo === "Todos"
+                ? `Mostrando todos los juegos (${juegosCatalogoFiltrados.length})`
+                : `Mostrando ${juegosCatalogoFiltrados.length} juegos de ${generoCatalogoActivo}`}
           </p>
 
           <div className="games-grid">
@@ -567,7 +660,11 @@ function Juegos() {
                 />
               ))
             ) : (
-              <div className="empty-games">No hay juegos en este género todavía.</div>
+              <div className="empty-games">
+                {busquedaJuegos.trim()
+                  ? "No se encontraron juegos con esa búsqueda."
+                  : "No hay juegos en este género todavía."}
+              </div>
             )}
           </div>
         </section>

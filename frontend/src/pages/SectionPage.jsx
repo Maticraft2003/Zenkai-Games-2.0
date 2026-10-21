@@ -218,6 +218,13 @@ function SectionPage({ type = "juegos", title, subtitle }) {
   const [juegosGuardados, setJuegosGuardados] = useState([]);
   const [errorJuegos, setErrorJuegos] = useState("");
   const [publicaciones, setPublicaciones] = useState([]);
+  const [comentariosPorPublicacion, setComentariosPorPublicacion] = useState({});
+  const [comentariosAbiertosId, setComentariosAbiertosId] = useState(null);
+  const [nuevoComentario, setNuevoComentario] = useState("");
+  const [cargandoComentariosId, setCargandoComentariosId] = useState(null);
+  const [guardandoComentario, setGuardandoComentario] = useState(false);
+  const [guardandoLikeComentarioId, setGuardandoLikeComentarioId] = useState(null);
+  const [errorComentarios, setErrorComentarios] = useState("");
   const [formularioContenido, setFormularioContenido] = useState({
     title: "",
     tag: "",
@@ -396,6 +403,37 @@ function SectionPage({ type = "juegos", title, subtitle }) {
     setPublicaciones(respuesta.data[claveRespuesta]);
   };
 
+  const abrirComentarios = async (publicacionId) => {
+    if (comentariosAbiertosId === publicacionId) {
+      setComentariosAbiertosId(null);
+      return;
+    }
+
+    setComentariosAbiertosId(publicacionId);
+    setNuevoComentario("");
+    setErrorComentarios("");
+    setCargandoComentariosId(publicacionId);
+
+    try {
+      const respuesta = await axios.get(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
+        params: { usuarioId: usuario?.id },
+      });
+      if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
+        throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
+      }
+
+      setComentariosPorPublicacion((actual) => ({
+        ...actual,
+        [publicacionId]: respuesta.data.comentarios,
+      }));
+    } catch (error) {
+      console.error("No se pudieron cargar los comentarios:", error);
+      setErrorComentarios("No se pudieron cargar los comentarios.");
+    } finally {
+      setCargandoComentariosId(null);
+    }
+  };
+
   const guardarPublicacion = async (evento) => {
     evento.preventDefault();
 
@@ -458,6 +496,88 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       console.error(`No se pudo eliminar de ${type}:`, error);
       setErrorContenido("No se pudo eliminar la publicación.");
     }
+  };
+
+  const publicarComentario = async (evento, publicacionId) => {
+    evento.preventDefault();
+    const contenido = nuevoComentario.trim();
+
+    if (!usuario?.id || !contenido) {
+      setErrorComentarios("Escribí un comentario antes de publicarlo.");
+      return;
+    }
+
+    try {
+      setGuardandoComentario(true);
+      setErrorComentarios("");
+      await axios.post(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
+        usuarioId: usuario.id,
+        contenido,
+      });
+      setNuevoComentario("");
+
+      const respuesta = await axios.get(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
+        params: { usuarioId: usuario.id },
+      });
+      if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
+        throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
+      }
+
+      setComentariosPorPublicacion((actual) => ({
+        ...actual,
+        [publicacionId]: respuesta.data.comentarios,
+      }));
+      setPublicaciones((actual) => actual.map((publicacion) => (
+        publicacion.id === publicacionId
+          ? { ...publicacion, comentarios_count: (publicacion.comentarios_count || 0) + 1 }
+          : publicacion
+      )));
+    } catch (error) {
+      console.error("No se pudo publicar el comentario:", error);
+      setErrorComentarios("No se pudo publicar el comentario. Intentá nuevamente.");
+    } finally {
+      setGuardandoComentario(false);
+    }
+  };
+
+  const cambiarLikeComentario = async (comentario) => {
+    if (!usuario?.id || guardandoLikeComentarioId === comentario.id) return;
+
+    try {
+      setGuardandoLikeComentarioId(comentario.id);
+      setErrorComentarios("");
+      const endpoint = `http://localhost:3001/comunidad/comentarios/${comentario.id}/like`;
+
+      if (comentario.liked_by_user) {
+        await axios.delete(endpoint, { params: { usuarioId: usuario.id } });
+      } else {
+        await axios.post(endpoint, { usuarioId: usuario.id });
+      }
+
+      const respuesta = await axios.get(
+        `http://localhost:3001/comunidad/${comentario.publicacion_id}/comentarios`,
+        { params: { usuarioId: usuario.id } }
+      );
+      if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
+        throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
+      }
+
+      setComentariosPorPublicacion((actual) => ({
+        ...actual,
+        [comentario.publicacion_id]: respuesta.data.comentarios,
+      }));
+    } catch (error) {
+      console.error("No se pudo actualizar el like del comentario:", error);
+      setErrorComentarios("No se pudo actualizar el like. Intentá nuevamente.");
+    } finally {
+      setGuardandoLikeComentarioId(null);
+    }
+  };
+
+  const compartirComentario = (comentario) => {
+    const texto = `${comentario.username} comentó: "${comentario.contenido}"\n\nMirá la conversación en ${window.location.origin}/comunidad`;
+    const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const guardarPerfil = async (evento) => {
@@ -790,6 +910,79 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                 </div>
                 <h3>{item.title || item.nombre}</h3>
                 <p className="game-card-description">{item.description || item.descripcion}</p>
+                {type === "comunidad" && item.id ? (
+                  <section className="community-comments" aria-label={`Comentarios de ${item.title}`}>
+                    <button
+                      type="button"
+                      className="secondary-button community-comments-toggle"
+                      aria-expanded={comentariosAbiertosId === item.id}
+                      onClick={() => abrirComentarios(item.id)}
+                    >
+                      {comentariosAbiertosId === item.id ? "Ocultar comentarios" : `Comentarios (${item.comentarios_count || 0})`}
+                    </button>
+
+                    {comentariosAbiertosId === item.id ? (
+                      <div className="community-comments-panel">
+                        {errorComentarios ? <p className="form-error" role="alert">{errorComentarios}</p> : null}
+
+                        <form className="community-comment-form" onSubmit={(evento) => publicarComentario(evento, item.id)}>
+                          <label className="full-width">
+                            <span>Escribí un comentario</span>
+                            <textarea
+                              rows="3"
+                              maxLength={1000}
+                              value={nuevoComentario}
+                              onChange={(evento) => setNuevoComentario(evento.target.value)}
+                              placeholder="¿Qué opinás?"
+                              required
+                            />
+                          </label>
+                          <button type="submit" className="primary-button" disabled={guardandoComentario}>
+                            {guardandoComentario ? "Publicando..." : "Comentar"}
+                          </button>
+                        </form>
+
+                        {cargandoComentariosId === item.id ? (
+                          <p className="community-comments-empty">Cargando comentarios...</p>
+                        ) : (comentariosPorPublicacion[item.id] || []).length > 0 ? (
+                          <ul className="community-comment-list">
+                            {comentariosPorPublicacion[item.id].map((comentario) => (
+                              <li className="community-comment" key={comentario.id}>
+                                <div className="community-comment-heading">
+                                  <strong>{comentario.username}</strong>
+                                  <time dateTime={comentario.created_at}>
+                                    {new Date(`${comentario.created_at}Z`).toLocaleString()}
+                                  </time>
+                                </div>
+                                <p>{comentario.contenido}</p>
+                                <div className="community-comment-actions">
+                                  <button
+                                    type="button"
+                                    className={`community-comment-action ${comentario.liked_by_user ? "active" : ""}`}
+                                    aria-pressed={Boolean(comentario.liked_by_user)}
+                                    disabled={guardandoLikeComentarioId === comentario.id}
+                                    onClick={() => cambiarLikeComentario(comentario)}
+                                  >
+                                    {comentario.liked_by_user ? "♥" : "♡"} Me gusta ({comentario.likes_count})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="community-comment-action"
+                                    onClick={() => compartirComentario(comentario)}
+                                  >
+                                    Compartir por WhatsApp
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="community-comments-empty">Todavía no hay comentarios. ¡Sé la primera persona en comentar!</p>
+                        )}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
                 {type === "rankings" ? (
                   <FavoriteButton
                     overlay={Boolean(item.image || item.imagen)}

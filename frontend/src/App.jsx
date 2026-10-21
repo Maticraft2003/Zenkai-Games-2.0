@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Home from "./pages/Home";
 import Juegos from "./pages/Juegos";
+import GameDetailPage from "./pages/GameDetailPage";
 import SectionPage from "./pages/SectionPage";
 import { Routes, Route, Navigate } from "react-router";
 import { useAuth } from "./context/useAuth";
@@ -40,6 +41,7 @@ function App() {
 
       {/* HOME */}
       <Route path="/home" element={protegerRuta(<Home />)} />
+      <Route path="/juego/:gameKey" element={protegerRuta(<GameDetailPage />)} />
 
       {/* SECCIONES */}
       <Route path="/juegos" element={protegerRuta(<Juegos />)} />

@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import FavoriteButton from "./FavoriteButton";
+import { normalizarClaveJuego } from "../utils/gameKey";
 
 function GameCard({ juego, onEdit, onDelete }) {
+  const navigate = useNavigate();
   const datos = juego ?? {};
   const puntuacion = datos.puntuacion === null || datos.puntuacion === undefined || datos.puntuacion === ""
     ? null
@@ -11,6 +14,8 @@ function GameCard({ juego, onEdit, onDelete }) {
 
   const estadisticas = [
     ...(puntuacionValida === null ? [] : [{ label: "Puntuación", value: `⭐ ${puntuacionValida.toFixed(1)}` }]),
+    ...(Number.isFinite(Number(datos.visitas)) ? [{ label: "Visitas", value: datos.visitas }] : []),
+    ...(Number.isFinite(Number(datos.likes)) ? [{ label: "Me gusta", value: datos.likes }] : []),
     { label: "Jugadores", value: datos.jugadores || "1-4" },
     { label: "Dificultad", value: datos.dificultad || "Media" },
   ];
@@ -41,6 +46,19 @@ function GameCard({ juego, onEdit, onDelete }) {
         <p className="game-card-description">
           {datos.descripcion || "Un título con gran nivel de entretenimiento y comunidad."}
         </p>
+
+        <button
+          type="button"
+          className="secondary-button game-detail-link"
+          disabled={!datos.nombre}
+          onClick={(evento) => {
+            evento.stopPropagation();
+            const gameKey = normalizarClaveJuego(datos.nombre);
+            navigate(`/juego/${encodeURIComponent(gameKey)}`, { state: { juego: datos } });
+          }}
+        >
+          Ver página del juego
+        </button>
 
         {onEdit || onDelete ? (
           <div className="crud-actions game-card-actions">

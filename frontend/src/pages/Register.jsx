@@ -8,22 +8,27 @@ function Register() {
     const [email, setEmail] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [registrando, setRegistrando] = useState(false);
     const navigate = useNavigate();
 
-    const registrarUsuario = async () => {
+    const registrarUsuario = async (evento) => {
+    evento.preventDefault();
+    setError("");
 
     if (password.length < 8 || new TextEncoder().encode(password).length > 72) {
-        alert("La contraseña debe tener al menos 8 caracteres y no superar los 72 bytes.");
+        setError("La contraseña debe tener al menos 8 caracteres y no superar los 72 bytes.");
         return;
     }
 
     try {
+        setRegistrando(true);
 
         const respuesta = await axios.post(
             "http://localhost:3001/register",
             {
-                username,
-                email,
+                username: username.trim(),
+                email: email.trim(),
                 password
             }
         );
@@ -36,16 +41,22 @@ function Register() {
 
         } else {
 
-            alert(respuesta.data.mensaje);
+            setError(respuesta.data.mensaje || "No se pudo crear la cuenta.");
 
         }
 
     } catch (error) {
 
-        console.error(error);
+        console.error("Error al registrar la cuenta:", error);
+        setError(
+            error.response?.data?.mensaje
+                || (error.response
+                    ? `El servidor respondió con un error (HTTP ${error.response.status}). Intentá nuevamente.`
+                    : "No hay conexión con el servidor. Verificá que el backend esté iniciado en el puerto 3001.")
+        );
 
-        alert("No se pudo conectar con el servidor.");
-
+    } finally {
+        setRegistrando(false);
     }
 
 };
@@ -54,42 +65,57 @@ function Register() {
 
         <div className="login-container">
 
-            <div className="login-box">
+            <div className="login-box register-box">
 
                 <h1>Zenkai Games</h1>
 
-                <p>Crear cuenta</p>
+                <p className="register-heading">Crear cuenta</p>
 
-                <input
-                    type="email"
-                    placeholder="Correo electrónico"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                />
+                <form className="register-form" onSubmit={registrarUsuario}>
+                    <label className="register-field">
+                        <span>Correo electrónico</span>
+                        <input
+                            type="email"
+                            placeholder="tu@correo.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            autoComplete="email"
+                            required
+                        />
+                    </label>
 
-                <input
-                    type="text"
-                    placeholder="Nombre de usuario"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                />
+                    <label className="register-field">
+                        <span>Nombre de usuario</span>
+                        <input
+                            type="text"
+                            placeholder="¿Cómo te llamamos?"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            autoComplete="username"
+                            required
+                        />
+                    </label>
 
-                <input
-                    type="password"
-                    placeholder="Contraseña"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    minLength={8}
-                    maxLength={72}
-                    required
-                />
+                    <label className="register-field">
+                        <span>Contraseña</span>
+                        <input
+                            type="password"
+                            placeholder="Mínimo 8 caracteres"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={72}
+                            required
+                        />
+                    </label>
 
-                <button
-                    onClick={registrarUsuario}
-                >
-                Crear cuenta
+                    {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-                </button>
+                    <button type="submit" className="login-button" disabled={registrando}>
+                        {registrando ? "Creando cuenta..." : "Crear cuenta"}
+                    </button>
+                </form>
 
             </div>
 

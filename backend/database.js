@@ -96,70 +96,151 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                 }
 
                                                 db.run(
-                                                    `CREATE TABLE IF NOT EXISTS favoritos (
+                                                    `CREATE TABLE IF NOT EXISTS comunidad_comentarios (
                                                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                        publicacion_id INTEGER NOT NULL,
                                                         usuario_id INTEGER NOT NULL,
-                                                        juego_key TEXT NOT NULL,
-                                                        nombre TEXT NOT NULL,
-                                                        genero TEXT,
-                                                        imagen TEXT,
-                                                        descripcion TEXT,
-                                                        UNIQUE(usuario_id, juego_key)
+                                                        contenido TEXT NOT NULL,
+                                                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                                                     )`,
-                                                    (favoritesTableError) => {
-                                                        if (favoritesTableError) {
-                                                            rechazarInicializacion(favoritesTableError);
+                                                    (commentsTableError) => {
+                                                        if (commentsTableError) {
+                                                            rechazarInicializacion(commentsTableError);
                                                             return;
                                                         }
 
                                                         db.run(
-                                                            `CREATE TABLE IF NOT EXISTS juegos_catalogo_ocultos (
-                                                                juego_key TEXT PRIMARY KEY
+                                                            `CREATE TABLE IF NOT EXISTS comunidad_comentarios_likes (
+                                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                comentario_id INTEGER NOT NULL,
+                                                                usuario_id INTEGER NOT NULL,
+                                                                UNIQUE(comentario_id, usuario_id)
                                                             )`,
-                                                            (hiddenCatalogError) => {
-                                                                if (hiddenCatalogError) {
-                                                                    rechazarInicializacion(hiddenCatalogError);
+                                                            (commentLikesTableError) => {
+                                                                if (commentLikesTableError) {
+                                                                    rechazarInicializacion(commentLikesTableError);
                                                                     return;
                                                                 }
 
-                                                                db.all("SELECT id, password FROM usuarios", async (usersError, users) => {
-                                                                    if (usersError) {
-                                                                        rechazarInicializacion(usersError);
-                                                                        return;
-                                                                    }
-
-                                                                    try {
-                                                                        const legacyUsers = users.filter(
-                                                                            (user) => !/^\$2[aby]\$/.test(user.password)
+                                                                db.run(
+                                                                    `CREATE TRIGGER IF NOT EXISTS limpiar_comentarios_comunidad
+                                                                     AFTER DELETE ON comunidad
+                                                                     BEGIN
+                                                                        DELETE FROM comunidad_comentarios_likes
+                                                                        WHERE comentario_id IN (
+                                                                            SELECT id FROM comunidad_comentarios WHERE publicacion_id = OLD.id
                                                                         );
+                                                                        DELETE FROM comunidad_comentarios WHERE publicacion_id = OLD.id;
+                                                                     END`,
+                                                                    (commentsCleanupTriggerError) => {
+                                                                        if (commentsCleanupTriggerError) {
+                                                                            rechazarInicializacion(commentsCleanupTriggerError);
+                                                                            return;
+                                                                        }
 
-                                                                        await Promise.all(legacyUsers.map(async (user) => {
-                                                                            const hashedPassword = await bcrypt.hash(user.password, 12);
-                                                                            await new Promise((resolveUpdate, rejectUpdate) => {
+                                                                        db.run(
+                                                                            `CREATE TABLE IF NOT EXISTS favoritos (
+                                                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                                usuario_id INTEGER NOT NULL,
+                                                                                juego_key TEXT NOT NULL,
+                                                                                nombre TEXT NOT NULL,
+                                                                                genero TEXT,
+                                                                                imagen TEXT,
+                                                                                descripcion TEXT,
+                                                                                UNIQUE(usuario_id, juego_key)
+                                                                            )`,
+                                                                            (favoritesTableError) => {
+                                                                                if (favoritesTableError) {
+                                                                                    rechazarInicializacion(favoritesTableError);
+                                                                                    return;
+                                                                                }
+
                                                                                 db.run(
-                                                                                    "UPDATE usuarios SET password = ? WHERE id = ?",
-                                                                                    [hashedPassword, user.id],
-                                                                                    (updateError) => {
-                                                                                        if (updateError) rejectUpdate(updateError);
-                                                                                        else resolveUpdate();
+                                                                                    `CREATE TABLE IF NOT EXISTS juegos_catalogo_ocultos (
+                                                                                        juego_key TEXT PRIMARY KEY
+                                                                                    )`,
+                                                                                    (hiddenCatalogError) => {
+                                                                                        if (hiddenCatalogError) {
+                                                                                            rechazarInicializacion(hiddenCatalogError);
+                                                                                            return;
+                                                                                        }
+
+                                                                                        db.run(
+                                                                                            `CREATE TABLE IF NOT EXISTS juegos_visitas (
+                                                                                                juego_key TEXT PRIMARY KEY,
+                                                                                                nombre TEXT NOT NULL,
+                                                                                                genero TEXT,
+                                                                                                imagen TEXT,
+                                                                                                descripcion TEXT,
+                                                                                                visitas INTEGER NOT NULL DEFAULT 0
+                                                                                            )`,
+                                                                                            (gameVisitsTableError) => {
+                                                                                                if (gameVisitsTableError) {
+                                                                                                    rechazarInicializacion(gameVisitsTableError);
+                                                                                                    return;
+                                                                                                }
+
+                                                                                                db.run(
+                                                                                                    `CREATE TABLE IF NOT EXISTS juegos_likes (
+                                                                                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                                                        juego_key TEXT NOT NULL,
+                                                                                                        usuario_id INTEGER NOT NULL,
+                                                                                                        UNIQUE(juego_key, usuario_id)
+                                                                                                    )`,
+                                                                                                    (gameLikesTableError) => {
+                                                                                                        if (gameLikesTableError) {
+                                                                                                            rechazarInicializacion(gameLikesTableError);
+                                                                                                            return;
+                                                                                                        }
+
+                                                                                                        db.all("SELECT id, password FROM usuarios", async (usersError, users) => {
+                                                                                                            if (usersError) {
+                                                                                                                rechazarInicializacion(usersError);
+                                                                                                                return;
+                                                                                                            }
+
+                                                                                                            try {
+                                                                                                                const legacyUsers = users.filter(
+                                                                                                                    (user) => !/^\$2[aby]\$/.test(user.password)
+                                                                                                                );
+
+                                                                                                                await Promise.all(legacyUsers.map(async (user) => {
+                                                                                                                    const hashedPassword = await bcrypt.hash(user.password, 12);
+                                                                                                                    await new Promise((resolveUpdate, rejectUpdate) => {
+                                                                                                                        db.run(
+                                                                                                                            "UPDATE usuarios SET password = ? WHERE id = ?",
+                                                                                                                            [hashedPassword, user.id],
+                                                                                                                            (updateError) => {
+                                                                                                                                if (updateError) rejectUpdate(updateError);
+                                                                                                                                else resolveUpdate();
+                                                                                                                            }
+                                                                                                                        );
+                                                                                                                    });
+                                                                                                                }));
+
+                                                                                                                resolverInicializacion();
+                                                                                                            } catch (passwordMigrationError) {
+                                                                                                                rechazarInicializacion(passwordMigrationError);
+                                                                                                            }
+                                                                                                        });
+                                                                                                    }
+                                                                                                );
+                                                                    }
+                                                                );
+                                                                                            }
+                                                                                        );
                                                                                     }
                                                                                 );
-                                                                            });
-                                                                        }));
-
-                                                                        resolverInicializacion();
-                                                                    } catch (passwordMigrationError) {
-                                                                        rechazarInicializacion(passwordMigrationError);
+                                                                            }
+                                                                        );
                                                                     }
-                                                                });
+                                                                );
                                                             }
                                                         );
                                                     }
                                                 );
                                             }
                                         );
-                                    }
-                                );
                             };
 
                             db.all("PRAGMA table_info(juegos)", (tableError, columns) => {

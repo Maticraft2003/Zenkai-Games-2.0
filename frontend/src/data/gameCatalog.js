@@ -28,6 +28,13 @@ const catalogoJuegos = [
     descripcion: "Acción frenética, armas brutales y un ritmo que no te deja respirar.",
   },
   {
+    nombre: "Mortal Kombat 1",
+    genero: "Lucha/Peleas",
+    etiqueta: "Peleas/sangriento",
+    imagen: "https://preview.redd.it/mortal-kombat-1-screenshots-i-honestly-like-it-v0-pirl215zotyd1.jpg?width=1080&crop=smart&auto=webp&s=81d13f4df19466e9715488417a535356f6399176",
+    descripcion: "Peleas intensas, combos explosivos y una presentación visual brutal.",
+  },
+  {
     nombre: "The Witcher 3: Wild Hunt",
     genero: "RPG",
     etiqueta: "RPG de mundo abierto",
