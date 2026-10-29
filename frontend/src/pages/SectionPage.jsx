@@ -754,7 +754,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       </header>
 
       <main style={{ maxWidth: "1200px", margin: "0 auto", padding: "32px 20px 60px" }}>
-        <section className="section-header" style={{ marginBottom: "20px" }}>
+        <section className="section-header section-page-heading" style={{ marginBottom: "20px" }}>
           <div>
             <p className="section-label">ZENKAI</p>
             <h2>{title}</h2>

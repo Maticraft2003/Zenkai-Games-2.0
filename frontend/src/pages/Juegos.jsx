@@ -18,6 +18,20 @@ const estadoInicial = {
 const TAMANO_MAXIMO_IMAGEN = 5 * 1024 * 1024;
 const TIPOS_IMAGEN_PERMITIDOS = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
 
+const leerImagenComoDataUrl = (archivo) => new Promise((resolve, reject) => {
+  const lector = new FileReader();
+  lector.onload = () => {
+    if (typeof lector.result === "string") {
+      resolve(lector.result);
+      return;
+    }
+
+    reject(new Error("No se pudo leer la imagen seleccionada."));
+  };
+  lector.onerror = () => reject(lector.error || new Error("No se pudo leer la imagen seleccionada."));
+  lector.readAsDataURL(archivo);
+});
+
 function Juegos() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,6 +39,7 @@ function Juegos() {
 
   const [juegos, setJuegos] = useState([]);
   const [formulario, setFormulario] = useState(estadoInicial);
+  const [imagenPegada, setImagenPegada] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
   const [catalogoEnEdicionKey, setCatalogoEnEdicionKey] = useState(null);
   const [formularioAbierto, setFormularioAbierto] = useState(() => Boolean(location.state?.abrirFormulario));
@@ -36,6 +51,13 @@ function Juegos() {
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!imagenPegada?.url) return undefined;
+
+    const url = imagenPegada.url;
+    return () => URL.revokeObjectURL(url);
+  }, [imagenPegada]);
 
   const obtenerJuegos = async () => {
     const respuesta = await axios.get("http://localhost:3001/juegos");
@@ -159,6 +181,9 @@ function Juegos() {
 
   const manejarCambio = (evento) => {
     const { name, value } = evento.target;
+    if (name === "imagen") setImagenPegada(null);
+    if (name === "nombre" && buscarJuegoEnCatalogo(value)) setImagenPegada(null);
+
     setFormulario((actual) => {
       if (name !== "nombre") return { ...actual, [name]: value };
 
@@ -192,7 +217,14 @@ function Juegos() {
     const archivo = archivoDesdeItems || Array.from(datosPortapapeles?.files || [])
       .find((archivoPortapapeles) => archivoPortapapeles.type.startsWith("image/"));
 
-    if (!archivo) return;
+    if (!archivo) {
+      const textoPegado = datosPortapapeles?.getData("text/plain") || "";
+      if (textoPegado.length > 2048) {
+        evento.preventDefault();
+        setError("La imagen es demasiado grande para pegarla como texto. Pegala como imagen o usá una URL.");
+      }
+      return;
+    }
 
     evento.preventDefault();
     setError("");
@@ -207,24 +239,19 @@ function Juegos() {
       return;
     }
 
-    const lector = new FileReader();
-    lector.onload = () => {
-      if (typeof lector.result !== "string") {
-        setError("No se pudo leer la imagen pegada.");
-        return;
-      }
-
-      setFormulario((actual) => ({ ...actual, imagen: lector.result }));
-    };
-    lector.onerror = () => {
-      console.error("No se pudo leer la imagen del portapapeles:", lector.error);
-      setError("No se pudo leer la imagen pegada. Intentá copiarla nuevamente.");
-    };
-    lector.readAsDataURL(archivo);
+    try {
+      const url = URL.createObjectURL(archivo);
+      setImagenPegada({ archivo, url });
+      setFormulario((actual) => ({ ...actual, imagen: "" }));
+    } catch (errorImagen) {
+      console.error("No se pudo preparar la imagen pegada:", errorImagen);
+      setError("No se pudo preparar la imagen pegada. Intentá copiarla nuevamente.");
+    }
   };
 
   const resetFormulario = () => {
     setFormulario(estadoInicial);
+    setImagenPegada(null);
     setEditandoId(null);
     setCatalogoEnEdicionKey(null);
     setFormularioAbierto(false);
@@ -237,9 +264,8 @@ function Juegos() {
     const nombre = formulario.nombre.trim();
     const genero = formulario.genero.trim();
     const descripcion = formulario.descripcion.trim();
-    const imagen = formulario.imagen.trim();
 
-    if (!nombre || !genero || !descripcion || !imagen) {
+    if (!nombre || !genero || !descripcion || (!formulario.imagen.trim() && !imagenPegada)) {
       setError("Completá el nombre, el género, la imagen y la descripción.");
       return;
     }
@@ -247,20 +273,23 @@ function Juegos() {
     const juegoExistente = juegos.find((juego) => juego.id === editandoId);
     const juegoCatalogoKey = catalogoEnEdicionKey
       || (buscarJuegoEnCatalogo(nombre) ? normalizarNombreJuego(nombre) : null);
-    const payload = {
-      nombre,
-      genero,
-      etiqueta: juegoExistente?.etiqueta || "",
-      puntuacion: juegoExistente?.puntuacion ?? null,
-      plataforma: juegoExistente?.plataforma || "",
-      imagen,
-      descripcion,
-      catalogKey: juegoCatalogoKey,
-    };
-
     try {
       setGuardando(true);
       setError("");
+
+      const imagen = imagenPegada
+        ? await leerImagenComoDataUrl(imagenPegada.archivo)
+        : formulario.imagen.trim();
+      const payload = {
+        nombre,
+        genero,
+        etiqueta: juegoExistente?.etiqueta || "",
+        puntuacion: juegoExistente?.puntuacion ?? null,
+        plataforma: juegoExistente?.plataforma || "",
+        imagen,
+        descripcion,
+        catalogKey: juegoCatalogoKey,
+      };
 
       if (editandoId) {
         await axios.put(`http://localhost:3001/juegos/${editandoId}`, payload);
@@ -274,7 +303,11 @@ function Juegos() {
       console.error(err);
       setError(
         err.response?.data?.mensaje
-          || "No se pudo guardar el juego. Revisá los datos e intentá nuevamente."
+          || (err.response?.status === 413
+            ? "La imagen o los datos superan el tamaño que acepta el servidor."
+            : err.response
+              ? `El servidor rechazó el juego (HTTP ${err.response.status}). Revisá los datos e intentá nuevamente.`
+              : "No se pudo conectar con el servidor. Verificá que el backend esté iniciado.")
       );
     } finally {
       setGuardando(false);
@@ -282,6 +315,7 @@ function Juegos() {
   };
 
   const editarJuego = (juego) => {
+    setImagenPegada(null);
     setEditandoId(juego.id);
     setCatalogoEnEdicionKey(juego.catalog_key || null);
     setFormulario({
@@ -327,6 +361,9 @@ function Juegos() {
     logout();
     navigate("/");
   };
+
+  const imagenPreview = imagenPegada?.url || formulario.imagen;
+  const imagenEnCampo = formulario.imagen.startsWith("data:image/") ? "" : formulario.imagen;
 
   return (
     <div className="home">
@@ -443,22 +480,22 @@ function Juegos() {
                     <input
                       type="text"
                       name="imagen"
-                      value={formulario.imagen}
+                      value={imagenEnCampo}
                       onChange={manejarCambio}
                       onPaste={manejarPegadoImagen}
                       placeholder="Pegá una URL o copiá y pegá una imagen"
                       maxLength={7 * 1024 * 1024}
-                      required
+                      required={!formulario.imagen.startsWith("data:image/") && !imagenPegada}
                     />
                     <small className="catalog-hint">
-                      Pegá una URL o copiá una imagen y pegala aquí (PNG, JPG, WEBP, GIF o AVIF; máximo 5 MB).
+                      Pegá una URL o copiá una imagen y pegala aquí (PNG, JPG, WEBP, GIF o AVIF; máximo 5 MB). La descripción seguirá disponible mientras se prepara la imagen.
                       Los juegos del catálogo completan la imagen automáticamente.
                     </small>
                   </label>
 
-                  {formulario.imagen ? (
+                  {imagenPreview ? (
                     <div className="game-form-preview full-width">
-                      <img src={formulario.imagen} alt={`Carátula de ${formulario.nombre || "juego"}`} />
+                      <img src={imagenPreview} alt={`Carátula de ${formulario.nombre || "juego"}`} />
                       <div>
                         <strong>{formulario.nombre || "Vista previa"}</strong>
                         <p>{formulario.descripcion || "La descripción aparecerá aquí."}</p>
@@ -525,6 +562,17 @@ function Juegos() {
                       <div className="game-card-info">
                         <div className="game-card-topline">
                           <span className="game-card-genre">{juego.genero || "Sin género"}</span>
+                          {juego.puntuacion !== null
+                            && juego.puntuacion !== undefined
+                            && juego.puntuacion !== ""
+                            && Number.isFinite(Number(juego.puntuacion)) ? (
+                              <span
+                                className="game-card-score"
+                                aria-label={`Puntuación: ${Number(juego.puntuacion).toFixed(1)} de 10`}
+                              >
+                                ⭐ {Number(juego.puntuacion).toFixed(1)}/10
+                              </span>
+                            ) : null}
                         </div>
                         <h3>{juego.nombre}</h3>
                         <p className="game-card-description">{juego.descripcion || "Sin descripción disponible."}</p>

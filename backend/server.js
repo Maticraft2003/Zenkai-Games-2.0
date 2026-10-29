@@ -9,7 +9,9 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "12mb" }));
+
+const PUNTUACION_PREDETERMINADA = 7;
 
 const validarDatosJuego = (datos) => {
     const camposObligatorios = [
@@ -38,10 +40,17 @@ const validarDatosJuego = (datos) => {
         }
     }
 
+    const puntuacion = datos?.puntuacion;
+    if (puntuacion !== undefined && puntuacion !== null && puntuacion !== "") {
+        const valorPuntuacion = Number(puntuacion);
+        if (!Number.isFinite(valorPuntuacion) || valorPuntuacion < 0 || valorPuntuacion > 10) {
+            return "La puntuación debe ser un número entre 0 y 10.";
+        }
+    }
+
     return null;
 };
 
-// Ruta de prueba
 app.get("/", (req, res) => {
   res.send("Backend de Zenkai Games funcionando");
 });
@@ -279,7 +288,6 @@ app.patch("/perfil/:id", (req, res) => {
     );
 });
 
-// Obtener todos los juegos
 app.get("/juegos", (req, res) => {
     db.all("SELECT * FROM juegos ORDER BY id DESC", (err, rows) => {
         if (err){
@@ -553,7 +561,12 @@ app.post("/juegos", (req, res) => {
         return res.status(400).json({ success: false, mensaje: errorValidacion });
     }
 
-    const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
+    const { nombre, genero, plataforma, etiqueta, imagen, descripcion } = req.body;
+    const puntuacion = req.body.puntuacion === undefined
+        || req.body.puntuacion === null
+        || req.body.puntuacion === ""
+        ? PUNTUACION_PREDETERMINADA
+        : Number(req.body.puntuacion);
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
 
     db.run(

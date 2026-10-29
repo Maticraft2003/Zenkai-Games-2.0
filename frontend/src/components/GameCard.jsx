@@ -36,7 +36,9 @@ function GameCard({ juego, onEdit, onDelete }) {
         <div className="game-card-topline">
           <span className="game-card-genre">{datos.genero || "Sin género"}</span>
           {puntuacionValida === null ? null : (
-            <span className="game-card-score">{puntuacionValida.toFixed(1)}</span>
+            <span className="game-card-score" aria-label={`Puntuación: ${puntuacionValida.toFixed(1)} de 10`}>
+              ⭐ {puntuacionValida.toFixed(1)}/10
+            </span>
           )}
         </div>
 

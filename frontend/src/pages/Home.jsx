@@ -400,7 +400,7 @@ function Home() {
       </header>
 
       <main>
-        <section className="hero">
+        <section className="hero home-hero-centered">
           <div className="hero-content">
             <p className="hero-tag">🎮 ZENKAI GAMES</p>
 
@@ -452,7 +452,7 @@ function Home() {
           <p>Tu aventura comienza acá.</p>
         </section>
 
-        <section className="games-section">
+        <section className="games-section home-featured-section">
           <div className="section-header">
             <div>
               <p className="section-label">DESTACADOS</p>
@@ -623,7 +623,7 @@ function Home() {
                 <div className="ranking-item" key={juego.id}>
                   <strong>#{index + 4}</strong>
                   <span>{juego.nombre}</span>
-                  <b>{puntuacion !== null && Number.isFinite(puntuacion) ? puntuacion.toFixed(1) : "Nuevo"}</b>
+                  <b>{puntuacion !== null && Number.isFinite(puntuacion) ? `⭐ ${puntuacion.toFixed(1)}/10` : "Nuevo"}</b>
                 </div>
               );
             })}

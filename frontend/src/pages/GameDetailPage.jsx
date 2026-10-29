@@ -24,6 +24,12 @@ function GameDetailPage() {
   const [juegoCargadoKey, setJuegoCargadoKey] = useState(null);
   const [error, setError] = useState("");
   const solicitudVisita = useRef({ gameKey: null, promise: null });
+  const puntuacionJuego = juego?.puntuacion === null
+    || juego?.puntuacion === undefined
+    || juego?.puntuacion === ""
+    ? null
+    : Number(juego.puntuacion);
+  const puntuacionValida = Number.isFinite(puntuacionJuego) ? puntuacionJuego : null;
 
   useEffect(() => {
     let ignore = false;
@@ -175,6 +181,11 @@ function GameDetailPage() {
             <div className="game-detail-info">
               <p className="section-label">{juego.genero || "VIDEOJUEGO"}</p>
               <h1>{juego.nombre}</h1>
+              {puntuacionValida === null ? null : (
+                <span className="game-card-score" aria-label={`Puntuación: ${puntuacionValida.toFixed(1)} de 10`}>
+                  ⭐ {puntuacionValida.toFixed(1)}/10
+                </span>
+              )}
               <p className="game-detail-description">
                 {juego.descripcion || "Todavía no hay una descripción para este juego."}
               </p>
