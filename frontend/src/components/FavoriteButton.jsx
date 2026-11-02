@@ -1,15 +1,13 @@
 import { useState } from "react";
 import { useFavorites } from "../context/favoriteHooks";
+import ZenkaiNotice from "./ZenkaiNotice";
+import { normalizarClaveJuego } from "../utils/gameKey";
 
 function FavoriteButton({ juego, overlay = false }) {
   const { clavesFavoritos, toggleFavorito } = useFavorites();
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  const clave = juego?.nombre
-    ?.trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase();
+  const clave = juego?.nombre ? normalizarClaveJuego(juego.nombre) : "";
   const esFavorito = clave ? clavesFavoritos.has(clave) : false;
 
   const manejarClick = async (evento) => {
@@ -41,7 +39,7 @@ function FavoriteButton({ juego, overlay = false }) {
       >
         {guardando ? "…" : esFavorito ? "★" : "☆"}
       </button>
-      {error ? <span className="favorite-error" role="alert">{error}</span> : null}
+      {error ? <ZenkaiNotice className="favorite-error">{error}</ZenkaiNotice> : null}
     </div>
   );
 }

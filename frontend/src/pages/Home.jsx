@@ -1,11 +1,14 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
 import GameCard from "../components/GameCard";
+import ZenkaiNotice from "../components/ZenkaiNotice";
 import { useAuth } from "../context/useAuth";
 import { useNavigate } from "react-router";
 import minecraftImage from "../assets/hero.png";
-import catalogoJuegos from "../data/gameCatalog";
+import catalogoJuegos, { obtenerDescripcionJuego } from "../data/gameCatalog";
 import { coincideBusquedaJuego, normalizarClaveJuego } from "../utils/gameKey";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
+import { diasRestantesComoNuevo } from "../utils/gameFreshness";
 import "./Home.css";
 
 function Home() {
@@ -18,6 +21,8 @@ function Home() {
   const [juegosRecomendados, setJuegosRecomendados] = useState([]);
   const [cargandoRecomendados, setCargandoRecomendados] = useState(true);
   const [errorRecomendados, setErrorRecomendados] = useState("");
+  const [juegosRanking, setJuegosRanking] = useState([]);
+  const [errorRanking, setErrorRanking] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -33,6 +38,26 @@ function Home() {
       .catch((error) => {
         console.error("No se pudieron cargar los juegos guardados:", error);
         if (!ignore) setErrorJuegos("No se pudieron cargar los juegos agregados al catálogo.");
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+
+    axios.get("http://localhost:3001/engagement/juegos/rankings")
+      .then((respuesta) => {
+        if (!respuesta.data?.success || !Array.isArray(respuesta.data.juegos)) {
+          throw new Error("La respuesta no contiene el ranking por género.");
+        }
+        if (!ignore) setJuegosRanking(respuesta.data.juegos);
+      })
+      .catch((error) => {
+        console.error("No se pudo cargar el ranking por género:", error);
+        if (!ignore) setErrorRanking("No se pudo cargar el ranking de mejores juegos por género.");
       });
 
     return () => {
@@ -236,7 +261,7 @@ function Home() {
       imagen: "https://m.media-amazon.com/images/M/MV5BNWRmYzE4NzAtY2Q5My00Mjc1LWJhNDgtMmRmNGQzMzMyYTJkXkEyXkFqcGc@._V1_FMjpg_UX1000_.jpg"
     },
     {
-      nombre: "Baldu´s Gate 3",
+      nombre: "Baldur's Gate 3",
       genero: "RPG",
       puntuacion: 9.2,
       etiqueta: "RPG occidental",
@@ -296,15 +321,20 @@ function Home() {
     ...juegosTerror,
     ...juegosRPG,
     ...juegosCarreras,
-  ].filter((juego) => Boolean(juego?.nombre) && Boolean(juego?.genero));
+  ]
+    .filter((juego) => Boolean(juego?.nombre) && Boolean(juego?.genero))
+    .map((juego) => ({
+      ...juego,
+      descripcion: obtenerDescripcionJuego(juego.nombre) || juego.descripcion,
+    }));
 
   const juegosPorNombre = new Map(
-    juegosDelSitio.map((juego) => [juego.nombre.trim().toLocaleLowerCase(), juego])
+    juegosDelSitio.map((juego) => [normalizarClaveJuego(juego.nombre), juego])
   );
   juegosGuardados.forEach((juego) => {
     if (!juego?.nombre || !juego?.genero) return;
 
-    juegosPorNombre.set(juego.nombre.trim().toLocaleLowerCase(), {
+    juegosPorNombre.set(normalizarClaveJuego(juego.nombre), {
       ...juego,
       etiqueta: juego.etiqueta || "Nuevo",
       puntuacion: Number(juego.puntuacion) || 0,
@@ -312,6 +342,9 @@ function Home() {
   });
 
   const todosLosJuegos = [...juegosPorNombre.values()];
+  const juegosNuevos = juegosGuardados
+    .map((juego) => ({ juego, diasRestantes: diasRestantesComoNuevo(juego.created_at) }))
+    .filter((item) => item.diasRestantes > 0);
 
   const generos = ["Todos", ...new Set(todosLosJuegos.map((juego) => juego.genero))];
 
@@ -353,17 +386,7 @@ function Home() {
       && coincideBusquedaJuego(juego, busquedaJuegos)
   ));
 
-  const nombresRankingPrincipal = new Set(["minecraft", "resident evil 4", "gta v"]);
-  const juegosGuardadosParaRanking = juegosGuardados
-    .filter((juego) => {
-      const nombreNormalizado = (juego.nombre || "")
-        .trim()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLocaleLowerCase();
-      return !nombresRankingPrincipal.has(nombreNormalizado);
-    })
-    .slice(0, 3);
+  const juegosConInteraccion = juegosRanking.slice(0, 5);
 
   const cerrarSesion = () => {
     logout();
@@ -400,6 +423,37 @@ function Home() {
       </header>
 
       <main>
+        <section className="games-section home-new-games-section" aria-labelledby="home-new-games-title">
+          <div className="section-header">
+            <div>
+              <p className="section-label">RECIÉN AGREGADOS</p>
+              <h2 id="home-new-games-title">🆕 Nuevos juegos</h2>
+              <p className="genre-filter-status">Se destacan durante 4 días y después siguen en el catálogo.</p>
+            </div>
+            <button
+              type="button"
+              className="add-game-button"
+              aria-label="Proponer un nuevo juego"
+              title="Proponer un nuevo juego"
+              onClick={() => navigate("/juegos", { state: { abrirFormulario: true } })}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
+          {juegosNuevos.length > 0 ? (
+            <div className="games-grid">
+              {juegosNuevos.map(({ juego, diasRestantes }) => (
+                <GameCard
+                  key={juego.id || juego.nombre}
+                  juego={{ ...juego, etiqueta: `NUEVO · ${diasRestantes} ${diasRestantes === 1 ? "DÍA" : "DÍAS"}` }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="empty-games">Todavía no se agregaron juegos nuevos. Los próximos aparecerán aquí.</div>
+          )}
+        </section>
+
         <section className="hero home-hero-centered">
           <div className="hero-content">
             <p className="hero-tag">🎮 ZENKAI GAMES</p>
@@ -460,22 +514,13 @@ function Home() {
             </div>
 
             <div className="games-section-actions">
-              <button
-                type="button"
-                className="add-game-button"
-                aria-label="Agregar nuevo juego"
-                title="Agregar nuevo juego"
-                onClick={() => navigate("/juegos", { state: { abrirFormulario: true } })}
-              >
-                <span aria-hidden="true">+</span>
-              </button>
               <button className="outline-button" onClick={() => navigate("/juegos")}>
                 Ver todos →
               </button>
             </div>
           </div>
 
-          {errorJuegos ? <p className="games-load-error" role="status">{errorJuegos}</p> : null}
+          {errorJuegos ? <ZenkaiNotice role="status">{errorJuegos}</ZenkaiNotice> : null}
 
           <div className="game-search">
             <label htmlFor="home-game-search">Buscar juegos</label>
@@ -563,11 +608,11 @@ function Home() {
             <div>
               <p className="section-label">POPULARIDAD DE LA COMUNIDAD</p>
               <h2>✨ Recomendados</h2>
-              <p className="genre-filter-status">Ordenados por visitas y me gusta de cada juego.</p>
+              <p className="genre-filter-status">Ordenados por puntuación, votos y visitas.</p>
             </div>
           </div>
 
-          {errorRecomendados ? <p className="games-load-error" role="alert">{errorRecomendados}</p> : null}
+          {errorRecomendados ? <ZenkaiNotice>{errorRecomendados}</ZenkaiNotice> : null}
           {cargandoRecomendados ? (
             <div className="empty-games">Cargando recomendaciones...</div>
           ) : juegosRecomendados.length > 0 ? (
@@ -578,7 +623,7 @@ function Home() {
             </div>
           ) : (
             <div className="empty-games">
-              Todavía no hay visitas ni me gusta suficientes para recomendar juegos. Explorá una página de juego para empezar.
+              Todavía no hay votos ni visitas suficientes para recomendar juegos. Explorá una página de juego para empezar.
             </div>
           )}
         </section>
@@ -588,6 +633,7 @@ function Home() {
             <div>
               <p className="section-label">TOP ZENKAI</p>
               <h2>🏆 Rankings</h2>
+              <p className="genre-filter-status">Puntuación sobre 10 calculada con me gusta y no me gusta.</p>
             </div>
 
             <button className="outline-button" onClick={() => navigate("/rankings")}>
@@ -595,39 +641,30 @@ function Home() {
             </button>
           </div>
 
-          <div className="ranking-list">
-            <div className="ranking-item first">
-              <strong>#1</strong>
-              <span>Minecraft</span>
-              <b>9.8</b>
-            </div>
+          {juegosConInteraccion.length > 0 ? (
+            <div className="ranking-list">
+              {juegosConInteraccion.map((juego, index) => {
+                const puntuacionJuego = obtenerPuntuacionJuego(juego);
 
-            <div className="ranking-item">
-              <strong>#2</strong>
-              <span>Resident Evil 4</span>
-              <b>9.4</b>
+                return (
+                  <div className={`ranking-item ${index === 0 ? "first" : ""}`} key={juego.juego_key || juego.id || juego.nombre}>
+                    <strong>#{index + 1}</strong>
+                    <span>{juego.nombre}</span>
+                    <b>⭐ {formatearPuntuacionJuego(puntuacionJuego)}</b>
+                    <small>
+                      {Number(juego.visitas) || 0} vistas · {Number(juego.likes) || 0} me gusta ·
+                      {" "}{Number(juego.dislikes) || 0} no me gusta
+                    </small>
+                  </div>
+                );
+              })}
             </div>
-
-            <div className="ranking-item">
-              <strong>#3</strong>
-              <span>GTA V</span>
-              <b>9.2</b>
+          ) : (
+            <div className="empty-games">
+              Todavía no hay juegos con votos para elegir los mejores de cada género.
             </div>
-            {juegosGuardadosParaRanking.map((juego, index) => {
-              const puntuacion = juego.puntuacion === null || juego.puntuacion === undefined
-                || juego.puntuacion === ""
-                ? null
-                : Number(juego.puntuacion);
-
-              return (
-                <div className="ranking-item" key={juego.id}>
-                  <strong>#{index + 4}</strong>
-                  <span>{juego.nombre}</span>
-                  <b>{puntuacion !== null && Number.isFinite(puntuacion) ? `⭐ ${puntuacion.toFixed(1)}/10` : "Nuevo"}</b>
-                </div>
-              );
-            })}
-          </div>
+          )}
+          {errorRanking ? <ZenkaiNotice>{errorRanking}</ZenkaiNotice> : null}
         </section>
 
         <section className="content-section">

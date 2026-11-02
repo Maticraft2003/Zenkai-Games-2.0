@@ -3,6 +3,8 @@ export function normalizarClaveJuego(nombre) {
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[‘’‛ʼ]/g, "'")
+    .replace(/[‐‑‒–—―−]/g, "-")
     .toLocaleLowerCase();
 }
 

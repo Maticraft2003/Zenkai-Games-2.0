@@ -174,10 +174,25 @@ body{
 
 .auth-error {
     margin: 12px 0 0;
-    color: #ff8b8b !important;
+    padding: 12px 14px;
+    border: 1px solid rgba(209, 0, 0, 0.52);
+    border-radius: 11px;
+    background: linear-gradient(110deg, rgba(87, 0, 0, 0.52), rgba(20, 12, 14, 0.96));
+    box-shadow: inset 3px 0 0 #d10000;
+    color: #ffe4e4 !important;
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.5;
     text-align: left !important;
+}
+
+.auth-error::before {
+    display: block;
+    margin-bottom: 3px;
+    color: #ff8a8a;
+    content: "ERROR · ZENKAI GAMES";
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
 }
 
 .register-box {
@@ -434,8 +449,7 @@ body{
     linear-gradient(
       rgba(5, 5, 5, 0.88),
       rgba(5, 5, 5, 0.96)
-    ),
-    url("/images/gaming-background.jpg");
+    );
 
   background-size: cover;
   background-position: center;

@@ -2,14 +2,7 @@ import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
 import { FavoritesContext } from "./favoriteHooks";
 import { useAuth } from "./useAuth";
-
-function getGameKey(name) {
-  return name
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase();
-}
+import { normalizarClaveJuego } from "../utils/gameKey";
 
 function FavoritesProvider({ children }) {
   const { usuario } = useAuth();
@@ -64,7 +57,7 @@ function FavoritesProvider({ children }) {
     if (!usuario?.id) throw new Error("Iniciá sesión para guardar favoritos.");
     if (!juego?.nombre?.trim()) throw new Error("El juego no tiene un nombre válido.");
 
-    const juegoKey = getGameKey(juego.nombre);
+    const juegoKey = normalizarClaveJuego(juego.nombre);
     const esFavorito = clavesFavoritos.has(juegoKey);
 
     if (esFavorito) {

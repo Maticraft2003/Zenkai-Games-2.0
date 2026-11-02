@@ -1,23 +1,51 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router";
 import FavoriteButton from "./FavoriteButton";
+import GameVoteButtons from "./GameVoteButtons";
+import { obtenerDescripcionJuego } from "../data/gameCatalog";
 import { normalizarClaveJuego } from "../utils/gameKey";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
 
 function GameCard({ juego, onEdit, onDelete }) {
   const navigate = useNavigate();
   const datos = juego ?? {};
-  const puntuacion = datos.puntuacion === null || datos.puntuacion === undefined || datos.puntuacion === ""
-    ? null
-    : Number(datos.puntuacion);
-  const puntuacionValida = Number.isFinite(puntuacion) ? puntuacion : null;
+  const [estadisticasJuego, setEstadisticasJuego] = useState({
+    visitas: datos.visitas,
+    likes: datos.likes,
+    dislikes: datos.dislikes,
+  });
+  const puntuacionJuego = obtenerPuntuacionJuego(estadisticasJuego);
+  const descripcion = datos.descripcion?.trim()
+    || obtenerDescripcionJuego(datos.nombre)
+    || "Todavía no hay una descripción disponible para este juego.";
   const [expandida, setExpandida] = useState(false);
+  const actualizarVotos = useCallback((juegoActualizado) => {
+    setEstadisticasJuego({
+      visitas: juegoActualizado.visitas,
+      likes: juegoActualizado.likes,
+      dislikes: juegoActualizado.dislikes,
+    });
+  }, []);
+  const mostrarValor = (valor) => (
+    valor === undefined || valor === null || valor === "" ? "Sin datos" : String(valor)
+  );
 
   const estadisticas = [
-    ...(puntuacionValida === null ? [] : [{ label: "Puntuación", value: `⭐ ${puntuacionValida.toFixed(1)}` }]),
-    ...(Number.isFinite(Number(datos.visitas)) ? [{ label: "Visitas", value: datos.visitas }] : []),
-    ...(Number.isFinite(Number(datos.likes)) ? [{ label: "Me gusta", value: datos.likes }] : []),
-    { label: "Jugadores", value: datos.jugadores || "1-4" },
-    { label: "Dificultad", value: datos.dificultad || "Media" },
+    { label: "Visitas", value: mostrarValor(estadisticasJuego.visitas) },
+    { label: "Me gusta", value: mostrarValor(estadisticasJuego.likes) },
+    { label: "No me gusta", value: mostrarValor(estadisticasJuego.dislikes) },
+  ];
+
+  const detalles = [
+    { label: "Género", value: datos.genero },
+    { label: "Etiqueta", value: datos.etiqueta },
+    { label: "Plataforma", value: datos.plataforma },
+    { label: "Jugadores", value: datos.jugadores },
+    { label: "Dificultad", value: datos.dificultad },
+    { label: "Visitas", value: estadisticasJuego.visitas },
+    { label: "Me gusta", value: estadisticasJuego.likes },
+    { label: "No me gusta", value: estadisticasJuego.dislikes },
+    { label: "Puntuación", value: formatearPuntuacionJuego(puntuacionJuego) },
   ];
 
   return (
@@ -30,37 +58,37 @@ function GameCard({ juego, onEdit, onDelete }) {
       <div className="game-card-image">
         <img src={datos.imagen} alt={datos.nombre || "Juego"} />
         {datos.etiqueta ? <span className="game-card-tag">{datos.etiqueta}</span> : null}
+        <FavoriteButton juego={datos} overlay />
       </div>
 
       <div className="game-card-info">
         <div className="game-card-topline">
           <span className="game-card-genre">{datos.genero || "Sin género"}</span>
-          {puntuacionValida === null ? null : (
-            <span className="game-card-score" aria-label={`Puntuación: ${puntuacionValida.toFixed(1)} de 10`}>
-              ⭐ {puntuacionValida.toFixed(1)}/10
-            </span>
-          )}
+          <span className="game-card-score" aria-label={`Puntuación: ${formatearPuntuacionJuego(puntuacionJuego)}`}>
+            ⭐ {formatearPuntuacionJuego(puntuacionJuego)}
+          </span>
         </div>
 
-        <FavoriteButton juego={datos} overlay={Boolean(datos.imagen)} />
         <h3>{datos.nombre || "Juego sin nombre"}</h3>
 
         <p className="game-card-description">
-          {datos.descripcion || "Un título con gran nivel de entretenimiento y comunidad."}
+          {descripcion}
         </p>
 
-        <button
-          type="button"
-          className="secondary-button game-detail-link"
-          disabled={!datos.nombre}
-          onClick={(evento) => {
-            evento.stopPropagation();
-            const gameKey = normalizarClaveJuego(datos.nombre);
-            navigate(`/juego/${encodeURIComponent(gameKey)}`, { state: { juego: datos } });
-          }}
-        >
-          Ver página del juego
-        </button>
+        {!expandida ? (
+          <button
+            type="button"
+            className="secondary-button game-detail-link"
+            disabled={!datos.nombre}
+            onClick={(evento) => {
+              evento.stopPropagation();
+              const gameKey = normalizarClaveJuego(datos.nombre);
+              navigate(`/juego/${encodeURIComponent(gameKey)}`, { state: { juego: datos } });
+            }}
+          >
+            Ver página del juego
+          </button>
+        ) : null}
 
         {onEdit || onDelete ? (
           <div className="crud-actions game-card-actions">
@@ -100,6 +128,12 @@ function GameCard({ juego, onEdit, onDelete }) {
           ))}
         </div>
 
+        <GameVoteButtons
+          juego={{ ...datos, ...estadisticasJuego }}
+          compact
+          onStatsChange={actualizarVotos}
+        />
+
         <button
           type="button"
           className="expand-hint"
@@ -113,28 +147,36 @@ function GameCard({ juego, onEdit, onDelete }) {
         </button>
 
         {expandida ? (
-          <div className="home-expanded-game-details">
-            {datos.etiqueta ? (
-              <div>
-                <span>Etiqueta</span>
-                <strong>{datos.etiqueta}</strong>
+          <section className="home-expanded-game-details" aria-label={`Información completa de ${datos.nombre || "este juego"}`}>
+            {detalles.map((detalle) => (
+              <div key={detalle.label}>
+                <span>{detalle.label}</span>
+                <strong>{mostrarValor(detalle.value)}</strong>
               </div>
-            ) : null}
-            <div>
-              <span>Género</span>
-              <strong>{datos.genero || "Sin género"}</strong>
-            </div>
-            {datos.plataforma ? (
-              <div>
-                <span>Plataforma</span>
-                <strong>{datos.plataforma}</strong>
-              </div>
-            ) : null}
+            ))}
             <div className="home-expanded-description">
               <span>Descripción</span>
-              <p>{datos.descripcion || "Sin descripción disponible."}</p>
+              <p>{descripcion}</p>
             </div>
-          </div>
+            <div className="home-expanded-actions">
+              <span>Acciones</span>
+              <button
+                type="button"
+                className="secondary-button game-detail-link"
+                disabled={!datos.nombre}
+                onClick={(evento) => {
+                  evento.stopPropagation();
+                  const gameKey = normalizarClaveJuego(datos.nombre);
+                  navigate(`/juego/${encodeURIComponent(gameKey)}`, { state: { juego: datos } });
+                }}
+              >
+                Ver página del juego
+              </button>
+              <span className="home-expanded-favorite-hint">
+                Usá la estrella de la portada para guardar o quitar este juego de favoritos.
+              </span>
+            </div>
+          </section>
         ) : null}
       </div>
     </article>

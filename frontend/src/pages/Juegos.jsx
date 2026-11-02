@@ -4,8 +4,11 @@ import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "../context/useAuth";
 import catalogoJuegos, { buscarJuegoEnCatalogo } from "../data/gameCatalog";
 import GameCard from "../components/GameCard";
+import ZenkaiNotice from "../components/ZenkaiNotice";
 import FavoriteButton from "../components/FavoriteButton";
-import { coincideBusquedaJuego } from "../utils/gameKey";
+import { coincideBusquedaJuego, normalizarClaveJuego } from "../utils/gameKey";
+import { diasRestantesComoNuevo } from "../utils/gameFreshness";
+import { obtenerPuntuacionJuego } from "../utils/gameRating";
 import "./Home.css";
 
 const estadoInicial = {
@@ -15,8 +18,17 @@ const estadoInicial = {
   descripcion: "",
 };
 
-const TAMANO_MAXIMO_IMAGEN = 5 * 1024 * 1024;
+const TAMANO_MAXIMO_IMAGEN = 20 * 1024 * 1024;
+const MAXIMO_CARACTERES_IMAGEN = 28 * 1024 * 1024;
 const TIPOS_IMAGEN_PERMITIDOS = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
+const obtenerPuntuacionVisible = (juego) => obtenerPuntuacionJuego(juego) ?? 0;
+const sonElMismoJuego = (nombreA, nombreB) => {
+  const claveA = normalizarClaveJuego(nombreA);
+  const claveB = normalizarClaveJuego(nombreB);
+  return claveA === claveB
+    || (claveA === "resident evil 4" && claveB === "resident evil 4 remake")
+    || (claveB === "resident evil 4" && claveA === "resident evil 4 remake");
+};
 
 const leerImagenComoDataUrl = (archivo) => new Promise((resolve, reject) => {
   const lector = new FileReader();
@@ -35,14 +47,20 @@ const leerImagenComoDataUrl = (archivo) => new Promise((resolve, reject) => {
 function Juegos() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
+  const { usuario, logout } = useAuth();
+  const esCuentaAdministradora = usuario?.role === "admin"
+    || usuario?.email?.trim().toLowerCase() === "admin@gmail.com";
+  const esAdministrador = esCuentaAdministradora && Boolean(usuario?.token);
+  const puedeAgregarJuegos = Boolean(usuario);
 
   const [juegos, setJuegos] = useState([]);
   const [formulario, setFormulario] = useState(estadoInicial);
   const [imagenPegada, setImagenPegada] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
   const [catalogoEnEdicionKey, setCatalogoEnEdicionKey] = useState(null);
-  const [formularioAbierto, setFormularioAbierto] = useState(() => Boolean(location.state?.abrirFormulario));
+  const [formularioAbierto, setFormularioAbierto] = useState(
+    () => Boolean(location.state?.abrirFormulario && usuario)
+  );
   const [juegoExpandidoId, setJuegoExpandidoId] = useState(null);
   const [generoActivo, setGeneroActivo] = useState("Todos");
   const [generoCatalogoActivo, setGeneroCatalogoActivo] = useState("Todos");
@@ -51,6 +69,13 @@ function Juegos() {
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const juegosNuevos = juegos
+    .map((juego) => ({ juego, diasRestantes: diasRestantesComoNuevo(juego.created_at) }))
+    .filter((item) => item.diasRestantes > 0);
+
+  const headersAutenticacion = () => ({
+    headers: { Authorization: `Bearer ${usuario?.token || ""}` },
+  });
 
   useEffect(() => {
     if (!imagenPegada?.url) return undefined;
@@ -118,14 +143,17 @@ function Juegos() {
     (generoActivo === "Todos" || juego.genero === generoActivo)
       && coincideBusquedaJuego(juego, busquedaJuegos)
   ));
-  const normalizarNombreJuego = (nombre) => nombre
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase();
+  const nombreJuegoNormalizado = normalizarClaveJuego(formulario.nombre);
+  const nombreJuegoValido = Boolean(buscarJuegoEnCatalogo(formulario.nombre))
+    || (Boolean(editandoId) && juegos.some(
+      (juego) => juego.id === editandoId && normalizarClaveJuego(juego.nombre) === nombreJuegoNormalizado
+    ));
+  const juegoDuplicado = juegos.some(
+    (juego) => juego.id !== editandoId && sonElMismoJuego(juego.nombre, formulario.nombre)
+  );
   const juegosDelCatalogo = new Map(
     catalogoJuegos.map((juego) => {
-      const catalogKey = normalizarNombreJuego(juego.nombre);
+      const catalogKey = normalizarClaveJuego(juego.nombre);
       return [`catalogo:${catalogKey}`, { ...juego, catalog_key: catalogKey }];
     })
   );
@@ -133,11 +161,11 @@ function Juegos() {
   juegos.forEach((juego) => {
     if (juego.nombre && juego.genero) {
       const catalogKey = juego.catalog_key || (buscarJuegoEnCatalogo(juego.nombre)
-        ? normalizarNombreJuego(juego.nombre)
+        ? normalizarClaveJuego(juego.nombre)
         : null);
       const clave = catalogKey
         ? `catalogo:${catalogKey}`
-        : `personalizado:${normalizarNombreJuego(juego.nombre)}`;
+        : `personalizado:${normalizarClaveJuego(juego.nombre)}`;
       juegosDelCatalogo.set(clave, {
         ...juegosDelCatalogo.get(clave),
         ...juego,
@@ -181,6 +209,7 @@ function Juegos() {
 
   const manejarCambio = (evento) => {
     const { name, value } = evento.target;
+    if (name === "nombre") setError("");
     if (name === "imagen") setImagenPegada(null);
     if (name === "nombre" && buscarJuegoEnCatalogo(value)) setImagenPegada(null);
 
@@ -235,7 +264,7 @@ function Juegos() {
     }
 
     if (archivo.size > TAMANO_MAXIMO_IMAGEN) {
-      setError("La imagen pegada supera el límite de 5 MB.");
+      setError("La imagen pegada supera el límite de 20 MB.");
       return;
     }
 
@@ -260,6 +289,15 @@ function Juegos() {
 
   const guardarJuego = async (evento) => {
     evento.preventDefault();
+    if (!usuario?.token) {
+      setError("Tu sesión no está activa. Volvé a iniciar sesión para agregar un juego.");
+      return;
+    }
+
+    if ((editandoId || catalogoEnEdicionKey) && !esAdministrador) {
+      setError("Solo el administrador puede editar juegos.");
+      return;
+    }
 
     const nombre = formulario.nombre.trim();
     const genero = formulario.genero.trim();
@@ -270,9 +308,19 @@ function Juegos() {
       return;
     }
 
+    if (!nombreJuegoValido) {
+      setError("Solo se pueden agregar juegos reales reconocidos del catálogo. Revisá el nombre; no se permiten palabras inventadas.");
+      return;
+    }
+
+    if (juegoDuplicado) {
+      setError("Este juego ya está agregado al catálogo. No se puede repetir; primero eliminá el juego existente.");
+      return;
+    }
+
     const juegoExistente = juegos.find((juego) => juego.id === editandoId);
     const juegoCatalogoKey = catalogoEnEdicionKey
-      || (buscarJuegoEnCatalogo(nombre) ? normalizarNombreJuego(nombre) : null);
+      || (buscarJuegoEnCatalogo(nombre) ? normalizarClaveJuego(nombre) : null);
     try {
       setGuardando(true);
       setError("");
@@ -292,9 +340,13 @@ function Juegos() {
       };
 
       if (editandoId) {
-        await axios.put(`http://localhost:3001/juegos/${editandoId}`, payload);
+        await axios.put(
+          `http://localhost:3001/juegos/${editandoId}`,
+          payload,
+          headersAutenticacion()
+        );
       } else {
-        await axios.post("http://localhost:3001/juegos", payload);
+        await axios.post("http://localhost:3001/juegos", payload, headersAutenticacion());
       }
 
       await cargarJuegos();
@@ -329,18 +381,27 @@ function Juegos() {
   };
 
   const eliminarJuego = async (juego) => {
+    if (!esAdministrador) {
+      setError("Volvé a iniciar sesión con tu cuenta de administrador para quitar juegos del catálogo.");
+      return;
+    }
+
     const confirmar = window.confirm("¿Seguro que querés eliminar este juego?");
     if (!confirmar) return;
 
     try {
       const catalogKey = juego.catalog_key
-        || (buscarJuegoEnCatalogo(juego.nombre) ? normalizarNombreJuego(juego.nombre) : null);
+        || (buscarJuegoEnCatalogo(juego.nombre) ? normalizarClaveJuego(juego.nombre) : null);
       if (juego.id) {
         await axios.delete(`http://localhost:3001/juegos/${juego.id}`, {
+          ...headersAutenticacion(),
           data: { catalogKey },
         });
       } else if (catalogKey) {
-        await axios.delete(`http://localhost:3001/catalogo-juegos/${encodeURIComponent(catalogKey)}`);
+        await axios.delete(
+          `http://localhost:3001/catalogo-juegos/${encodeURIComponent(catalogKey)}`,
+          headersAutenticacion()
+        );
       } else {
         throw new Error("No se pudo identificar el juego para eliminarlo.");
       }
@@ -397,22 +458,53 @@ function Juegos() {
         <section className="games-section crud-section">
           <div className="section-header">
             <div>
-              <p className="section-label">ADMIN</p>
-              <h2>🎮 Gestión de juegos</h2>
+              <p className="section-label">{esAdministrador ? "ADMINISTRACIÓN" : "CATÁLOGO ZENKAI"}</p>
+              <h2>🎮 {esAdministrador ? "Gestión de juegos" : "Juegos"}</h2>
             </div>
-            <button
-              type="button"
-              className="add-game-button"
-              aria-label="Agregar nuevo juego"
-              title="Agregar nuevo juego"
-              onClick={() => {
-                resetFormulario();
-                setFormularioAbierto(true);
-              }}
-            >
-              <span aria-hidden="true">+</span>
-            </button>
+            {puedeAgregarJuegos ? (
+              <button
+                type="button"
+                className="add-game-button"
+                aria-label="Agregar nuevo juego"
+                title="Agregar nuevo juego"
+                onClick={() => {
+                  resetFormulario();
+                  setFormularioAbierto(true);
+                }}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+            ) : null}
           </div>
+          <p className="genre-filter-status">
+            Por ahora podés proponer juegos desde acá. Solo se aceptan títulos reconocidos y que todavía no estén en el catálogo.
+          </p>
+          {error && !formularioAbierto ? <ZenkaiNotice>{error}</ZenkaiNotice> : null}
+
+          <section className="home-new-games-section" aria-labelledby="games-new-title">
+            <div className="section-header">
+              <div>
+                <p className="section-label">RECIÉN AGREGADOS</p>
+                <h3 id="games-new-title">🆕 Nuevos juegos</h3>
+                <p className="genre-filter-status">Se destacan durante 4 días y luego permanecen en el catálogo.</p>
+              </div>
+            </div>
+            {juegosNuevos.length > 0 ? (
+              <div className="games-grid">
+                {juegosNuevos.map(({ juego, diasRestantes }) => (
+                  <GameCard
+                    key={`nuevo-${juego.id}`}
+                    juego={{
+                      ...juego,
+                      etiqueta: `NUEVO · ${diasRestantes} ${diasRestantes === 1 ? "DÍA" : "DÍAS"}`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="empty-games">Todavía no se agregaron juegos nuevos.</div>
+            )}
+          </section>
 
           <div className="game-search">
             <label htmlFor="games-page-search">Buscar en todos los juegos</label>
@@ -433,7 +525,7 @@ function Juegos() {
             </div>
           </div>
 
-          {formularioAbierto ? (
+          {formularioAbierto && puedeAgregarJuegos ? (
             <div
               className="game-modal-backdrop"
               onMouseDown={(evento) => {
@@ -454,7 +546,16 @@ function Juegos() {
                   </button>
                 </div>
 
-                {error ? <p className="form-error" role="alert">{error}</p> : null}
+                {!usuario?.token ? (
+                  <ZenkaiNotice title="SESIÓN NO ACTIVA">
+                    Volvé a iniciar sesión para guardar el nuevo juego.
+                    {" "}
+                    <button type="button" className="secondary-button" onClick={cerrarSesion}>
+                      Iniciar sesión nuevamente
+                    </button>
+                  </ZenkaiNotice>
+                ) : null}
+                {error ? <ZenkaiNotice>{error}</ZenkaiNotice> : null}
 
                 <div className="form-grid">
                   <label className="full-width">
@@ -466,8 +567,32 @@ function Juegos() {
                       onChange={manejarCambio}
                       placeholder="Ej: Minecraft"
                       maxLength={255}
+                      list="game-title-options"
                       required
                     />
+                    <datalist id="game-title-options">
+                      {catalogoJuegos
+                        .filter((juego) => !juegos.some(
+                          (juegoExistente) => sonElMismoJuego(juegoExistente.nombre, juego.nombre)
+                            && juegoExistente.id !== editandoId
+                        ))
+                        .map((juego) => (
+                        <option key={juego.nombre} value={juego.nombre} />
+                      ))}
+                    </datalist>
+                    <small className="catalog-hint">
+                      Elegí un título real reconocido del catálogo. No se aceptan nombres inventados.
+                    </small>
+                    {formulario.nombre.trim() && !nombreJuegoValido ? (
+                      <ZenkaiNotice className="game-title-validation-notice" title="JUEGO NO RECONOCIDO">
+                        Ese nombre no corresponde a un juego del catálogo y no se puede agregar.
+                      </ZenkaiNotice>
+                    ) : null}
+                    {formulario.nombre.trim() && nombreJuegoValido && juegoDuplicado ? (
+                      <ZenkaiNotice className="game-title-validation-notice" title="JUEGO YA AGREGADO">
+                        Este juego ya está en el catálogo y no se puede repetir.
+                      </ZenkaiNotice>
+                    ) : null}
                   </label>
 
                   <label>
@@ -484,11 +609,11 @@ function Juegos() {
                       onChange={manejarCambio}
                       onPaste={manejarPegadoImagen}
                       placeholder="Pegá una URL o copiá y pegá una imagen"
-                      maxLength={7 * 1024 * 1024}
+                      maxLength={MAXIMO_CARACTERES_IMAGEN}
                       required={!formulario.imagen.startsWith("data:image/") && !imagenPegada}
                     />
                     <small className="catalog-hint">
-                      Pegá una URL o copiá una imagen y pegala aquí (PNG, JPG, WEBP, GIF o AVIF; máximo 5 MB). La descripción seguirá disponible mientras se prepara la imagen.
+                      Pegá una URL o copiá una imagen y pegala aquí (PNG, JPG, WEBP, GIF o AVIF; máximo 20 MB). La descripción seguirá disponible mientras se prepara la imagen.
                       Los juegos del catálogo completan la imagen automáticamente.
                     </small>
                   </label>
@@ -518,7 +643,11 @@ function Juegos() {
                 </div>
 
                 <div className="form-actions">
-                  <button type="submit" className="primary-button" disabled={guardando}>
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={guardando || !usuario?.token || !nombreJuegoValido || juegoDuplicado}
+                  >
                     {guardando ? "Guardando..." : editandoId || catalogoEnEdicionKey ? "Actualizar juego" : "Guardar juego"}
                   </button>
                   <button type="button" className="secondary-button" onClick={resetFormulario}>
@@ -562,17 +691,12 @@ function Juegos() {
                       <div className="game-card-info">
                         <div className="game-card-topline">
                           <span className="game-card-genre">{juego.genero || "Sin género"}</span>
-                          {juego.puntuacion !== null
-                            && juego.puntuacion !== undefined
-                            && juego.puntuacion !== ""
-                            && Number.isFinite(Number(juego.puntuacion)) ? (
-                              <span
-                                className="game-card-score"
-                                aria-label={`Puntuación: ${Number(juego.puntuacion).toFixed(1)} de 10`}
-                              >
-                                ⭐ {Number(juego.puntuacion).toFixed(1)}/10
-                              </span>
-                            ) : null}
+                          <span
+                            className="game-card-score"
+                            aria-label={`Puntuación: ${obtenerPuntuacionVisible(juego).toFixed(1)} de 10`}
+                          >
+                            ⭐ {obtenerPuntuacionVisible(juego).toFixed(1)}/10
+                          </span>
                         </div>
                         <h3>{juego.nombre}</h3>
                         <p className="game-card-description">{juego.descripcion || "Sin descripción disponible."}</p>
@@ -600,33 +724,37 @@ function Juegos() {
                                 className="secondary-button"
                                 onClick={(evento) => {
                                   evento.stopPropagation();
-                                  navigate(`/juego/${encodeURIComponent(normalizarNombreJuego(juego.nombre))}`, {
+                                  navigate(`/juego/${encodeURIComponent(normalizarClaveJuego(juego.nombre))}`, {
                                     state: { juego },
                                   });
                                 }}
                               >
                                 Ver página del juego
                               </button>
-                              <button
-                                type="button"
-                                className="secondary-button"
-                                onClick={(evento) => {
-                                  evento.stopPropagation();
-                                  editarJuego(juego);
-                                }}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="logout-button danger-button"
-                                onClick={(evento) => {
-                                  evento.stopPropagation();
-                                  eliminarJuego(juego);
-                                }}
-                              >
-                                Eliminar
-                              </button>
+                              {esAdministrador ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={(evento) => {
+                                      evento.stopPropagation();
+                                      editarJuego(juego);
+                                    }}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="logout-button danger-button"
+                                    onClick={(evento) => {
+                                      evento.stopPropagation();
+                                      eliminarJuego(juego);
+                                    }}
+                                  >
+                                    Eliminar
+                                  </button>
+                                </>
+                              ) : null}
                             </div>
                           </div>
                         ) : null}

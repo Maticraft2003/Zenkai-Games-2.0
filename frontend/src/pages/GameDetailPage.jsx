@@ -1,10 +1,13 @@
 import axios from "axios";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import FavoriteButton from "../components/FavoriteButton";
-import catalogoJuegos from "../data/gameCatalog";
+import GameVoteButtons from "../components/GameVoteButtons";
+import ZenkaiNotice from "../components/ZenkaiNotice";
+import catalogoJuegos, { buscarJuegoEnCatalogo, obtenerDescripcionJuego } from "../data/gameCatalog";
 import { useAuth } from "../context/useAuth";
 import { normalizarClaveJuego } from "../utils/gameKey";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
 import "./Home.css";
 
 function GameDetailPage() {
@@ -18,18 +21,14 @@ function GameDetailPage() {
   );
   const juegoInicial = juegoDesdeNavegacion || juegoCatalogo || null;
   const [juego, setJuego] = useState(juegoInicial);
-  const [estadisticas, setEstadisticas] = useState({ visitas: 0, likes: 0 });
-  const [likeActivo, setLikeActivo] = useState(false);
-  const [guardandoLike, setGuardandoLike] = useState(false);
+  const [estadisticas, setEstadisticas] = useState({ visitas: 0, likes: 0, dislikes: 0 });
   const [juegoCargadoKey, setJuegoCargadoKey] = useState(null);
   const [error, setError] = useState("");
   const solicitudVisita = useRef({ gameKey: null, promise: null });
-  const puntuacionJuego = juego?.puntuacion === null
-    || juego?.puntuacion === undefined
-    || juego?.puntuacion === ""
-    ? null
-    : Number(juego.puntuacion);
-  const puntuacionValida = Number.isFinite(puntuacionJuego) ? puntuacionJuego : null;
+  const puntuacionJuego = obtenerPuntuacionJuego(estadisticas);
+  const descripcionJuego = juego?.descripcion
+    || obtenerDescripcionJuego(juego?.nombre)
+    || "Todavía no hay una descripción para este juego.";
 
   useEffect(() => {
     let ignore = false;
@@ -49,14 +48,16 @@ function GameDetailPage() {
             }
 
             const datosGuardados = respuestaEstadisticas.data.juego;
-            datosJuego = datosGuardados.nombre
-              ? datosGuardados
-              : {
-                nombre: gameKey,
-                genero: "",
-                imagen: "",
-                descripcion: "Todavía no hay información adicional para este juego.",
-              };
+            if (datosGuardados.nombre) {
+              datosJuego = datosGuardados;
+            } else {
+              datosJuego = buscarJuegoEnCatalogo(gameKey);
+              if (!datosJuego) {
+                const juegoNoEncontrado = new Error("Este juego no existe o ya no está disponible en Zenkai Games.");
+                juegoNoEncontrado.code = "GAME_NOT_FOUND";
+                throw juegoNoEncontrado;
+              }
+            }
           }
 
           const respuestaVisita = await axios.post(
@@ -81,15 +82,19 @@ function GameDetailPage() {
           setEstadisticas({
             visitas: Number(datosJuego.visitas) || 0,
             likes: Number(datosJuego.likes) || 0,
+            dislikes: Number(datosJuego.dislikes) || 0,
           });
-          setLikeActivo(Boolean(datosJuego.liked_by_user));
         }
       })
       .catch((visitaError) => {
         console.error("No se pudieron cargar las estadísticas del juego:", visitaError);
         if (!ignore) {
           setJuegoCargadoKey(gameKey);
-          setError("No se pudieron cargar los datos del juego.");
+          setError(
+            visitaError.code === "GAME_NOT_FOUND" || visitaError.response?.status === 404
+              ? "Este juego no existe o ya no está disponible en Zenkai Games."
+              : "No se pudieron cargar los datos del juego. Intentá nuevamente."
+          );
         }
       });
 
@@ -98,44 +103,13 @@ function GameDetailPage() {
     };
   }, [gameKey, juegoInicial, usuario?.id]);
 
-  const actualizarEstadisticas = async () => {
-    const respuesta = await axios.get(
-      `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}`,
-      { params: { usuarioId: usuario?.id } }
-    );
-    if (!respuesta.data?.success || !respuesta.data.juego) {
-      throw new Error("La respuesta del servidor no contiene las estadísticas.");
-    }
-
+  const actualizarEstadisticas = useCallback((datosJuego) => {
     setEstadisticas({
-      visitas: Number(respuesta.data.juego.visitas) || 0,
-      likes: Number(respuesta.data.juego.likes) || 0,
+      visitas: Number(datosJuego.visitas) || 0,
+      likes: Number(datosJuego.likes) || 0,
+      dislikes: Number(datosJuego.dislikes) || 0,
     });
-    setLikeActivo(Boolean(respuesta.data.juego.liked_by_user));
-  };
-
-  const cambiarLike = async () => {
-    if (!usuario?.id || guardandoLike) return;
-
-    try {
-      setGuardandoLike(true);
-      setError("");
-      const endpoint = `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}/like`;
-
-      if (likeActivo) {
-        await axios.delete(endpoint, { params: { usuarioId: usuario.id } });
-      } else {
-        await axios.post(endpoint, { usuarioId: usuario.id });
-      }
-
-      await actualizarEstadisticas();
-    } catch (likeError) {
-      console.error("No se pudo actualizar el me gusta del juego:", likeError);
-      setError("No se pudo actualizar el me gusta. Intentá nuevamente.");
-    } finally {
-      setGuardandoLike(false);
-    }
-  };
+  }, []);
 
   const cerrarSesion = () => {
     logout();
@@ -154,9 +128,13 @@ function GameDetailPage() {
           <button type="button" onClick={() => navigate("/home")}>Inicio</button>
           <button type="button" onClick={() => navigate("/juegos")}>Juegos</button>
           <button type="button" onClick={() => navigate("/rankings")}>Rankings</button>
+          <button type="button" onClick={() => navigate("/favoritos")}>Favoritos</button>
         </nav>
 
         <div className="navbar-user">
+          <button type="button" className="profile-button" onClick={() => navigate("/perfil")}>
+            👤 Mi Perfil
+          </button>
           <button type="button" className="logout-button" onClick={cerrarSesion}>
             🚪 Salir
           </button>
@@ -168,7 +146,11 @@ function GameDetailPage() {
           ← Volver
         </button>
 
-        {error ? <p className="games-load-error" role="alert">{error}</p> : null}
+        {error ? (
+          <ZenkaiNotice title={error.includes("no existe") ? "JUEGO NO ENCONTRADO" : "ERROR DEL JUEGO"}>
+            {error}
+          </ZenkaiNotice>
+        ) : null}
         {juegoCargadoKey !== gameKey ? (
           <div className="empty-games">Cargando juego...</div>
         ) : juego ? (
@@ -181,13 +163,11 @@ function GameDetailPage() {
             <div className="game-detail-info">
               <p className="section-label">{juego.genero || "VIDEOJUEGO"}</p>
               <h1>{juego.nombre}</h1>
-              {puntuacionValida === null ? null : (
-                <span className="game-card-score" aria-label={`Puntuación: ${puntuacionValida.toFixed(1)} de 10`}>
-                  ⭐ {puntuacionValida.toFixed(1)}/10
-                </span>
-              )}
+              <span className="game-card-score" aria-label={`Puntuación: ${formatearPuntuacionJuego(puntuacionJuego)}`}>
+                ⭐ {formatearPuntuacionJuego(puntuacionJuego)}
+              </span>
               <p className="game-detail-description">
-                {juego.descripcion || "Todavía no hay una descripción para este juego."}
+                {descripcionJuego}
               </p>
 
               <div className="game-engagement-stats" aria-live="polite">
@@ -200,28 +180,26 @@ function GameDetailPage() {
                   <span>Me gusta</span>
                 </div>
                 <div>
-                  <strong>{estadisticas.visitas + estadisticas.likes}</strong>
-                  <span>Interés total</span>
+                  <strong>{estadisticas.dislikes}</strong>
+                  <span>No me gusta</span>
                 </div>
               </div>
 
               <div className="game-detail-actions">
-                <button
-                  type="button"
-                  className={`game-page-like ${likeActivo ? "active" : ""}`}
-                  aria-pressed={likeActivo}
-                  disabled={!usuario?.id || guardandoLike}
-                  onClick={cambiarLike}
-                >
-                  {guardandoLike ? "Guardando..." : likeActivo ? "♥ Te gusta" : "♡ Me gusta"} ({estadisticas.likes})
-                </button>
+                <GameVoteButtons
+                  juego={{ ...juego, ...estadisticas }}
+                  onStatsChange={actualizarEstadisticas}
+                />
                 <FavoriteButton juego={juego} />
               </div>
             </div>
           </article>
-        ) : (
-          <div className="empty-games">No se encontró el juego solicitado.</div>
-        )}
+        ) : null}
+        {juegoCargadoKey === gameKey && !juego && !error ? (
+          <ZenkaiNotice title="JUEGO NO ENCONTRADO">
+            Este juego no existe o ya no está disponible en Zenkai Games.
+          </ZenkaiNotice>
+        ) : null}
       </main>
     </div>
   );

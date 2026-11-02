@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../context/useAuth";
 import GameCard from "../components/GameCard";
-import FavoriteButton from "../components/FavoriteButton";
+import ZenkaiNotice from "../components/ZenkaiNotice";
 import { useFavorites } from "../context/favoriteHooks";
+import { obtenerDescripcionJuego } from "../data/gameCatalog";
 import "./Home.css";
 
 const juegos = [
@@ -118,32 +119,12 @@ const juegos = [
     descripcion: "Exploración de mundo abierto, variedad de vehículos y eventos emocionantes.",
     imagen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQL4hKrZ65FtYq3g4eUmzbfxPdkf-zfIhyNBw_X2ojLqm2-cOQo4OKfo3w&s=10"
   }
-];
+].map((juego) => ({
+  ...juego,
+  descripcion: obtenerDescripcionJuego(juego.nombre) || juego.descripcion,
+}));
 
 const contentByType = {
-  rankings: [
-    {
-      title: "#1 Minecraft",
-      tag: "Top global",
-      description: "Puntuación máxima por comunidad, innovación y duración.",
-      meta: "9.8/10",
-      accent: "#fbbf24"
-    },
-    {
-      title: "#2 Elden Ring",
-      tag: "RPG",
-      description: "Aventura épica con mundo enorme y exploración profunda.",
-      meta: "9.7/10",
-      accent: "#fca5a5"
-    },
-    {
-      title: "#3 GTA V",
-      tag: "Mundo abierto",
-      description: "Una experiencia completa con libertad y variedad.",
-      meta: "9.6/10",
-      accent: "#93c5fd"
-    }
-  ],
   noticias: [
     {
       title: "Nuevos eventos del mes",
@@ -216,6 +197,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
   const { favoritos, cargando: cargandoFavoritos, errorCarga: errorFavoritosCarga } = useFavorites();
   const [generoActivo, setGeneroActivo] = useState("Todos");
   const [juegosGuardados, setJuegosGuardados] = useState([]);
+  const [rankingCargado, setRankingCargado] = useState(false);
   const [errorJuegos, setErrorJuegos] = useState("");
   const [publicaciones, setPublicaciones] = useState([]);
   const [comentariosPorPublicacion, setComentariosPorPublicacion] = useState({});
@@ -277,10 +259,10 @@ function SectionPage({ type = "juegos", title, subtitle }) {
 
     let ignore = false;
 
-    axios.get("http://localhost:3001/juegos")
+    axios.get("http://localhost:3001/engagement/juegos/rankings")
       .then((respuesta) => {
         if (!respuesta.data?.success || !Array.isArray(respuesta.data.juegos)) {
-          throw new Error("La respuesta del servidor no contiene una lista de juegos.");
+          throw new Error("La respuesta del servidor no contiene una lista de juegos populares.");
         }
 
         if (!ignore) setJuegosGuardados(respuesta.data.juegos);
@@ -288,6 +270,9 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       .catch((error) => {
         console.error("No se pudieron cargar los juegos para rankings:", error);
         if (!ignore) setErrorJuegos("No se pudieron cargar los juegos del catálogo.");
+      })
+      .finally(() => {
+        if (!ignore) setRankingCargado(true);
       });
 
     return () => {
@@ -325,65 +310,15 @@ function SectionPage({ type = "juegos", title, subtitle }) {
 
   const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero))];
 
-  const normalizarNombre = (nombre) => nombre
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase();
-  const juegosGuardadosPorNombre = new Map(
-    juegosGuardados.map((juego) => [normalizarNombre(juego.nombre || ""), juego])
-  );
-  const rankingBase = contentByType.rankings.map((item, index) => {
-    const nombreBase = item.title.replace(/^#\d+\s*/, "");
-    const juegoGuardado = juegosGuardadosPorNombre.get(normalizarNombre(nombreBase));
-    if (!juegoGuardado) return item;
-
-    const puntuacion = juegoGuardado.puntuacion === null || juegoGuardado.puntuacion === undefined
-      || juegoGuardado.puntuacion === ""
-      ? null
-      : Number(juegoGuardado.puntuacion);
-
-    return {
-      ...item,
-      title: `#${index + 1} ${juegoGuardado.nombre}`,
-      tag: juegoGuardado.genero || item.tag,
-      description: juegoGuardado.descripcion || item.description,
-      meta: puntuacion === null || !Number.isFinite(puntuacion)
-        ? "Sin puntuación"
-        : `${puntuacion.toFixed(1)}/10`,
-      image: juegoGuardado.imagen,
-    };
-  });
-  const juegosAgregadosAlRanking = juegosGuardados
-    .filter((juego) => !contentByType.rankings.some((item) => {
-      const nombreBase = item.title.replace(/^#\d+\s*/, "");
-      return normalizarNombre(nombreBase) === normalizarNombre(juego.nombre || "");
-    }))
-    .map((juego, index) => {
-      const puntuacion = juego.puntuacion === null || juego.puntuacion === undefined || juego.puntuacion === ""
-        ? null
-        : Number(juego.puntuacion);
-
-      return {
-        ...juego,
-        title: `#${rankingBase.length + index + 1} ${juego.nombre}`,
-        tag: juego.genero || "Catálogo",
-        description: juego.descripcion || "Juego agregado al catálogo de Zenkai Games.",
-        meta: puntuacion === null || !Number.isFinite(puntuacion)
-          ? "Sin puntuación"
-          : `${puntuacion.toFixed(1)}/10`,
-        image: juego.imagen,
-      };
-    });
-  const items = type === "rankings"
-    ? [...rankingBase, ...juegosAgregadosAlRanking]
-    : type === "juegos"
+  const juegosDelRanking = [...juegosGuardados]
+    .sort((a, b) => (a.genero || "").localeCompare(b.genero || ""));
+  const items = type === "juegos"
       ? juegos
       : type === "noticias" || type === "comunidad"
         ? [...publicaciones, ...(contentByType[type] || [])]
         : type === "perfil"
           ? []
-          : contentByType[type] || contentByType.rankings;
+          : contentByType[type] || [];
 
   const resetFormularioContenido = () => {
     setFormularioContenido({ title: "", tag: "", description: "" });
@@ -604,7 +539,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
         throw new Error("La respuesta del servidor no contiene el perfil actualizado.");
       }
 
-      login(respuesta.data.usuario);
+      login({ ...respuesta.data.usuario, token: usuario?.token });
       setFormularioPerfil((actual) => ({ ...actual, currentPassword: "", newPassword: "" }));
       setMensajePerfil("Tu perfil se actualizó correctamente.");
     } catch (error) {
@@ -777,16 +712,43 @@ function SectionPage({ type = "juegos", title, subtitle }) {
         </section>
 
         {type === "rankings" && errorJuegos ? (
-          <p className="games-load-error" role="status">{errorJuegos}</p>
+          <ZenkaiNotice>{errorJuegos}</ZenkaiNotice>
         ) : null}
         {(type === "noticias" || type === "comunidad" || type === "perfil") && errorContenido ? (
-          <p className="games-load-error" role="alert">{errorContenido}</p>
+          <ZenkaiNotice>{errorContenido}</ZenkaiNotice>
         ) : null}
         {type === "perfil" ? (
           <section className="game-form section-content-form">
-            <p className="section-label">TU CUENTA</p>
-            <h3>Datos de perfil</h3>
-            <p className="genre-filter-status">ID de usuario: {usuario?.id}</p>
+            <div className="profile-overview">
+              <div className="profile-avatar" aria-hidden="true">
+                {(usuario?.username || "Z").trim().charAt(0).toLocaleUpperCase()}
+              </div>
+              <div className="profile-overview-copy">
+                <p className="section-label">TU ESPACIO ZENKAI</p>
+                <h3>Hola, {usuario?.username || "gamer"} 👋</h3>
+                <p>Administrá tu cuenta y seguí tus juegos favoritos desde un mismo lugar.</p>
+              </div>
+            </div>
+            <div className="profile-summary-grid">
+              <article className="profile-summary-card">
+                <span>Cuenta</span>
+                <strong>{usuario?.username || "Gamer"}</strong>
+              </article>
+              <article className="profile-summary-card">
+                <span>Correo</span>
+                <strong>{usuario?.email || "Sin correo"}</strong>
+              </article>
+              <button
+                type="button"
+                className="profile-summary-card profile-favorites-link"
+                onClick={() => navigate("/favoritos")}
+              >
+                <span>Juegos favoritos</span>
+                <strong>{cargandoFavoritos ? "Cargando..." : favoritos.length}</strong>
+              </button>
+            </div>
+            <p className="profile-account-id">ID de cuenta: {usuario?.id}</p>
+            <h3 className="profile-form-title">Datos de perfil</h3>
             {mensajePerfil ? <p className="catalog-hint" role="status">{mensajePerfil}</p> : null}
             <form onSubmit={guardarPerfil}>
               <div className="form-grid">
@@ -839,6 +801,11 @@ function SectionPage({ type = "juegos", title, subtitle }) {
             </form>
           </section>
         ) : null}
+        {type === "rankings" ? (
+          <p className="genre-filter-status">
+            Un solo juego por género: el que tenga la mejor puntuación de la comunidad.
+          </p>
+        ) : null}
 
         {formularioContenidoAbierto && (type === "noticias" || type === "comunidad") ? (
           <form className="game-form section-content-form" onSubmit={guardarPublicacion}>
@@ -888,12 +855,24 @@ function SectionPage({ type = "juegos", title, subtitle }) {
             cargandoFavoritos ? (
               <div className="empty-games">Cargando tus favoritos...</div>
             ) : errorFavoritosCarga ? (
-              <div className="empty-games" role="alert">{errorFavoritosCarga}</div>
+              <ZenkaiNotice>{errorFavoritosCarga}</ZenkaiNotice>
             ) : favoritos.length > 0 ? (
               favoritos.map((juego) => <GameCard key={juego.juego_key} juego={juego} />)
             ) : (
               <div className="empty-games">
                 Todavía no guardaste juegos. Usá la estrella en Inicio, Juegos o Rankings para agregarlos.
+              </div>
+            )
+          ) : type === "rankings" ? (
+            !rankingCargado ? (
+              <div className="empty-games">Calculando el ranking de la comunidad...</div>
+            ) : juegosDelRanking.length > 0 ? (
+              juegosDelRanking.map((juego) => (
+                <GameCard key={juego.juego_key || juego.id || juego.nombre} juego={juego} />
+              ))
+            ) : (
+              <div className="empty-games">
+                Todavía no hay votos para elegir los mejores juegos de cada género.
               </div>
             )
           ) : items.map((item, index) => (
@@ -923,7 +902,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
 
                     {comentariosAbiertosId === item.id ? (
                       <div className="community-comments-panel">
-                        {errorComentarios ? <p className="form-error" role="alert">{errorComentarios}</p> : null}
+                        {errorComentarios ? <ZenkaiNotice>{errorComentarios}</ZenkaiNotice> : null}
 
                         <form className="community-comment-form" onSubmit={(evento) => publicarComentario(evento, item.id)}>
                           <label className="full-width">
@@ -982,17 +961,6 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                       </div>
                     ) : null}
                   </section>
-                ) : null}
-                {type === "rankings" ? (
-                  <FavoriteButton
-                    overlay={Boolean(item.image || item.imagen)}
-                    juego={{
-                      nombre: (item.title || item.nombre || "").replace(/^#\d+\s*/, ""),
-                      genero: item.tag || item.genero || "",
-                      imagen: item.image || item.imagen || "",
-                      descripcion: item.description || item.descripcion || "",
-                    }}
-                  />
                 ) : null}
                 {(type === "noticias" || type === "comunidad") && item.id ? (
                   <div className="crud-actions">
