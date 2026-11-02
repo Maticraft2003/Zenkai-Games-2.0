@@ -3,15 +3,117 @@ import bcrypt from "bcrypt";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { createHash, randomBytes } from "crypto";
+import { normalizarClaveJuego, TITULOS_JUEGOS_PERMITIDOS } from "./gameKeys.js";
 
 dotenv.config();
 
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "12mb" }));
+app.use(express.json({ limit: "28mb" }));
 
 const PUNTUACION_PREDETERMINADA = 7;
+const DURACION_SESION_MS = 30 * 24 * 60 * 60 * 1000;
+const MAXIMO_CARACTERES_IMAGEN = 28 * 1024 * 1024;
+
+const hashToken = (token) => createHash("sha256").update(token).digest("hex");
+
+const crearSesion = (usuarioId, callback) => {
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + DURACION_SESION_MS).toISOString();
+
+    db.run(
+        "INSERT INTO auth_sessions(token_hash, user_id, expires_at) VALUES(?, ?, ?)",
+        [hashToken(token), usuarioId, expiresAt],
+        (error) => callback(error, error ? null : token)
+    );
+};
+
+const requerirSesion = (req, res, next) => {
+    const authorization = req.get("authorization") || "";
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            mensaje: "Iniciá sesión para agregar un juego.",
+            code: "AUTH_REQUIRED",
+        });
+    }
+
+    db.get(
+        "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?",
+        [hashToken(token)],
+        (sessionError, session) => {
+            if (sessionError) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudo verificar tu sesión.",
+                });
+            }
+
+            if (!session || Date.parse(session.expires_at) <= Date.now()) {
+                return res.status(401).json({
+                    success: false,
+                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
+                    code: "SESSION_EXPIRED",
+                });
+            }
+
+            req.usuarioId = session.user_id;
+            return next();
+        }
+    );
+};
+
+const requerirAdministrador = (req, res, next) => {
+    const authorization = req.get("authorization") || "";
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            mensaje: "Iniciá sesión como administrador para gestionar juegos.",
+            code: "ADMIN_AUTH_REQUIRED",
+        });
+    }
+
+    db.get(
+        `SELECT user_roles.role, auth_sessions.user_id, auth_sessions.expires_at
+         FROM auth_sessions
+         JOIN user_roles ON user_roles.user_id = auth_sessions.user_id
+         WHERE auth_sessions.token_hash = ?`,
+        [hashToken(token)],
+        (sessionError, session) => {
+            if (sessionError) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudo verificar el permiso de administración.",
+                });
+            }
+
+            if (!session || Date.parse(session.expires_at) <= Date.now()) {
+                return res.status(401).json({
+                    success: false,
+                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
+                    code: "SESSION_EXPIRED",
+                });
+            }
+
+            if (session.role !== "admin") {
+                return res.status(403).json({
+                    success: false,
+                    mensaje: "Solo un administrador puede gestionar los juegos.",
+                    code: "ADMIN_REQUIRED",
+                });
+            }
+
+            req.usuarioAdminId = session.user_id;
+            return next();
+        }
+    );
+};
 
 const validarDatosJuego = (datos) => {
     const camposObligatorios = [
@@ -30,7 +132,7 @@ const validarDatosJuego = (datos) => {
     const limites = [
         ["nombre", 255, "El nombre"],
         ["genero", 120, "El género"],
-        ["imagen", 7 * 1024 * 1024, "La imagen"],
+        ["imagen", MAXIMO_CARACTERES_IMAGEN, "La imagen"],
         ["descripcion", 10000, "La descripción"]
     ];
 
@@ -51,6 +153,105 @@ const validarDatosJuego = (datos) => {
     return null;
 };
 
+const validarTituloJuego = (nombre, nombreActual = "") => {
+    const clave = normalizarClaveJuego(nombre);
+    if (TITULOS_JUEGOS_PERMITIDOS.has(clave) || (nombreActual && clave === normalizarClaveJuego(nombreActual))) {
+        return null;
+    }
+    return "El nombre debe corresponder a un juego del catálogo permitido.";
+};
+
+const esNombreDuplicado = (error) => error?.message?.includes("juegos.nombre_key");
+
+const CONSULTA_JUEGOS_POPULARIDAD = `
+    SELECT juegos.id, juegos.nombre, juegos.genero, juegos.puntuacion,
+           juegos.plataforma, juegos.etiqueta, juegos.imagen, juegos.descripcion,
+           juegos.catalog_key, juegos.created_at,
+           COALESCE(visitas.visitas, 0) AS visitas,
+           COALESCE(likes.likes, 0) AS likes,
+           COALESCE(dislikes.dislikes, 0) AS dislikes,
+           CASE
+               WHEN COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0) = 0 THEN NULL
+               ELSE ROUND(
+                   10.0 * COALESCE(likes.likes, 0)
+                   / (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)),
+                   1
+               )
+           END AS puntuacion_comunidad,
+           COALESCE(visitas.visitas, 0) + 2 * COALESCE(likes.likes, 0) AS popularidad
+    FROM juegos
+    LEFT JOIN juegos_visitas AS visitas ON visitas.juego_key = juegos.nombre_key
+    LEFT JOIN (
+        SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
+    ) AS likes ON likes.juego_key = juegos.nombre_key
+    LEFT JOIN (
+        SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
+    ) AS dislikes ON dislikes.juego_key = juegos.nombre_key
+    ORDER BY puntuacion_comunidad IS NULL ASC, puntuacion_comunidad DESC,
+             (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)) DESC,
+             visitas DESC, likes DESC,
+             juegos.nombre COLLATE NOCASE ASC, juegos.id ASC
+`;
+
+const CONSULTA_RANKINGS_JUEGOS = `
+    WITH juegos_catalogo AS (
+        SELECT juegos.id, juegos.nombre, juegos.genero, juegos.puntuacion,
+               juegos.plataforma, juegos.etiqueta, juegos.imagen, juegos.descripcion,
+               juegos.catalog_key, juegos.nombre_key, juegos.created_at
+        FROM juegos
+        UNION ALL
+        SELECT NULL AS id, visitas.nombre, visitas.genero, NULL AS puntuacion,
+               NULL AS plataforma, NULL AS etiqueta, visitas.imagen, visitas.descripcion,
+               NULL AS catalog_key, visitas.juego_key AS nombre_key,
+               '1970-01-01 00:00:00' AS created_at
+        FROM juegos_visitas AS visitas
+        WHERE NOT EXISTS (
+            SELECT 1 FROM juegos WHERE juegos.nombre_key = visitas.juego_key
+        )
+    ),
+    juegos_con_puntuacion AS (
+        SELECT juegos_catalogo.id, juegos_catalogo.nombre, juegos_catalogo.genero,
+               juegos_catalogo.puntuacion, juegos_catalogo.plataforma,
+               juegos_catalogo.etiqueta, juegos_catalogo.imagen, juegos_catalogo.descripcion,
+               juegos_catalogo.catalog_key, juegos_catalogo.created_at,
+               COALESCE(visitas.visitas, 0) AS visitas,
+               COALESCE(likes.likes, 0) AS likes,
+               COALESCE(dislikes.dislikes, 0) AS dislikes,
+               ROUND(
+                   10.0 * COALESCE(likes.likes, 0)
+                   / NULLIF(COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0), 0),
+                   1
+               ) AS puntuacion_comunidad,
+               COALESCE(visitas.visitas, 0) + 2 * COALESCE(likes.likes, 0) AS popularidad
+        FROM juegos_catalogo
+        LEFT JOIN juegos_visitas AS visitas ON visitas.juego_key = juegos_catalogo.nombre_key
+        LEFT JOIN (
+            SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
+        ) AS likes ON likes.juego_key = juegos_catalogo.nombre_key
+        LEFT JOIN (
+            SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
+        ) AS dislikes ON dislikes.juego_key = juegos_catalogo.nombre_key
+    ),
+    juegos_por_genero AS (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY LOWER(TRIM(genero))
+                   ORDER BY puntuacion_comunidad DESC,
+                            likes + dislikes DESC,
+                            visitas DESC,
+                            nombre COLLATE NOCASE ASC
+               ) AS posicion
+        FROM juegos_con_puntuacion
+        WHERE likes + dislikes > 0
+    )
+    SELECT id, nombre, genero, puntuacion, plataforma, etiqueta, imagen,
+           descripcion, catalog_key, created_at, visitas, likes, dislikes,
+           puntuacion_comunidad, popularidad
+    FROM juegos_por_genero
+    WHERE posicion = 1
+    ORDER BY genero COLLATE NOCASE ASC
+`;
+
 app.get("/", (req, res) => {
   res.send("Backend de Zenkai Games funcionando");
 });
@@ -68,7 +269,11 @@ app.post("/login", (req, res) => {
     }
 
     db.get(
-        "SELECT id, username, email, password FROM usuarios WHERE email = ?",
+        `SELECT usuarios.id, usuarios.username, usuarios.email, usuarios.password,
+                COALESCE(user_roles.role, 'usuario') AS role
+         FROM usuarios
+         LEFT JOIN user_roles ON user_roles.user_id = usuarios.id
+         WHERE usuarios.email = ?`,
         [email],
         async (err, usuario) => {
 
@@ -99,14 +304,27 @@ app.post("/login", (req, res) => {
                 });
             }
 
-            return res.json({
-                success: true,
-                mensaje: "Bienvenido",
-                usuario: {
-                  id: usuario.id,
-                  username: usuario.username,
-                  email: usuario.email
-              }
+            crearSesion(usuario.id, (sessionError, token) => {
+                if (sessionError) {
+                    console.error("No se pudo crear la sesión del usuario:", sessionError);
+                    return res.status(500).json({
+                        success: false,
+                        mensaje: "No se pudo iniciar la sesión.",
+                    });
+                }
+
+                db.run("DELETE FROM auth_sessions WHERE expires_at <= ?", [new Date().toISOString()]);
+                return res.json({
+                    success: true,
+                    mensaje: "Bienvenido",
+                    usuario: {
+                        id: usuario.id,
+                        username: usuario.username,
+                        email: usuario.email,
+                        role: usuario.role,
+                        token,
+                    },
+                });
             });
         }
     );
@@ -158,14 +376,21 @@ app.post("/register", (req, res) => {
                   });
               }
 
-              return res.status(201).json({
-                  success: true,
-                  mensaje: "Usuario creado correctamente.",
-                  usuario: {
-                      id: this.lastID,
-                      username,
-                      email
+              const userId = this.lastID;
+              db.run("INSERT INTO user_roles(user_id, role) VALUES(?, 'usuario')", [userId], (roleError) => {
+                  if (roleError) {
+                      console.error("No se pudo asignar el rol inicial a la cuenta:", roleError);
+                      return res.status(500).json({
+                          success: false,
+                          mensaje: "La cuenta se creó, pero no se pudo terminar su configuración."
+                      });
                   }
+
+                  return res.status(201).json({
+                      success: true,
+                      mensaje: "Usuario creado correctamente.",
+                      usuario: { id: userId, username, email, role: "usuario" }
+                  });
               });
             }
         );
@@ -176,7 +401,11 @@ app.get("/perfil/:id", (req, res) => {
     const { id } = req.params;
 
     db.get(
-        "SELECT id, username, email FROM usuarios WHERE id = ?",
+        `SELECT usuarios.id, usuarios.username, usuarios.email,
+                COALESCE(user_roles.role, 'usuario') AS role
+         FROM usuarios
+         LEFT JOIN user_roles ON user_roles.user_id = usuarios.id
+         WHERE usuarios.id = ?`,
         [id],
         (err, usuario) => {
             if (err) {
@@ -220,7 +449,11 @@ app.patch("/perfil/:id", (req, res) => {
     }
 
     db.get(
-        "SELECT id, username, email, password FROM usuarios WHERE id = ?",
+        `SELECT usuarios.id, usuarios.username, usuarios.email, usuarios.password,
+                COALESCE(user_roles.role, 'usuario') AS role
+         FROM usuarios
+         LEFT JOIN user_roles ON user_roles.user_id = usuarios.id
+         WHERE usuarios.id = ?`,
         [id],
         async (findError, usuario) => {
             if (findError) {
@@ -273,7 +506,7 @@ app.patch("/perfil/:id", (req, res) => {
                       return res.json({
                           success: true,
                           mensaje: "Perfil actualizado correctamente.",
-                          usuario: { id: usuario.id, username, email }
+                          usuario: { id: usuario.id, username, email, role: usuario.role }
                       });
                   }
               );
@@ -289,7 +522,7 @@ app.patch("/perfil/:id", (req, res) => {
 });
 
 app.get("/juegos", (req, res) => {
-    db.all("SELECT * FROM juegos ORDER BY id DESC", (err, rows) => {
+    db.all(CONSULTA_JUEGOS_POPULARIDAD, (err, rows) => {
         if (err){
             return res.status(500).json({
                 success: false,
@@ -321,7 +554,7 @@ app.get("/catalogo-juegos/ocultos", (req, res) => {
     });
 });
 
-app.delete("/catalogo-juegos/:juegoKey", (req, res) => {
+app.delete("/catalogo-juegos/:juegoKey", requerirAdministrador, (req, res) => {
     const { juegoKey } = req.params;
     if (!juegoKey) {
         return res.status(400).json({ success: false, mensaje: "El juego no es válido." });
@@ -343,22 +576,36 @@ app.delete("/catalogo-juegos/:juegoKey", (req, res) => {
     );
 });
 
-const normalizarClaveJuego = (nombre) => nombre
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase();
-
 app.get("/engagement/juegos/recomendados", (req, res) => {
     db.all(
         `SELECT visitas.juego_key, visitas.nombre, visitas.genero, visitas.imagen,
                 visitas.descripcion, visitas.visitas,
-                COUNT(juegos_likes.id) AS likes,
-                visitas.visitas + COUNT(juegos_likes.id) AS interes_total
+                COALESCE(likes.likes, 0) AS likes,
+                COALESCE(dislikes.dislikes, 0) AS dislikes,
+                CASE
+                    WHEN COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0) = 0 THEN NULL
+                    ELSE ROUND(
+                        10.0 * COALESCE(likes.likes, 0)
+                        / (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)),
+                        1
+                    )
+                END AS puntuacion_comunidad,
+                visitas.visitas + 2 * COALESCE(likes.likes, 0) AS popularidad,
+                visitas.visitas + 2 * COALESCE(likes.likes, 0) AS interes_total
          FROM juegos_visitas AS visitas
-         LEFT JOIN juegos_likes ON juegos_likes.juego_key = visitas.juego_key
-         GROUP BY visitas.juego_key
-         ORDER BY interes_total DESC, visitas.visitas DESC, visitas.nombre COLLATE NOCASE ASC
+         LEFT JOIN (
+             SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
+         ) AS likes ON likes.juego_key = visitas.juego_key
+         LEFT JOIN (
+             SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
+         ) AS dislikes ON dislikes.juego_key = visitas.juego_key
+         WHERE visitas.visitas > 0
+            OR COALESCE(likes.likes, 0) > 0
+            OR COALESCE(dislikes.dislikes, 0) > 0
+         ORDER BY puntuacion_comunidad IS NULL ASC, puntuacion_comunidad DESC,
+                  (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)) DESC,
+                  popularidad DESC, visitas.visitas DESC,
+                  visitas.nombre COLLATE NOCASE ASC, visitas.juego_key ASC
          LIMIT 6`,
         (err, juegos) => {
             if (err) {
@@ -373,6 +620,19 @@ app.get("/engagement/juegos/recomendados", (req, res) => {
     );
 });
 
+app.get("/engagement/juegos/rankings", (req, res) => {
+    db.all(CONSULTA_RANKINGS_JUEGOS, (err, juegos) => {
+        if (err) {
+            return res.status(500).json({
+                success: false,
+                mensaje: "No se pudieron cargar los rankings."
+            });
+        }
+
+        return res.json({ success: true, juegos });
+    });
+});
+
 app.get("/engagement/juegos/:gameKey", (req, res) => {
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
     const usuarioId = Number(req.query.usuarioId);
@@ -382,17 +642,34 @@ app.get("/engagement/juegos/:gameKey", (req, res) => {
     }
 
     db.get(
-        `SELECT ? AS juego_key,
+        `WITH votos AS (
+             SELECT
+                 (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = ?) AS likes,
+                 (SELECT COUNT(*) FROM juegos_dislikes WHERE juego_key = ?) AS dislikes
+         )
+         SELECT ? AS juego_key,
                 (SELECT nombre FROM juegos_visitas WHERE juego_key = ?) AS nombre,
                 (SELECT genero FROM juegos_visitas WHERE juego_key = ?) AS genero,
                 (SELECT imagen FROM juegos_visitas WHERE juego_key = ?) AS imagen,
                 (SELECT descripcion FROM juegos_visitas WHERE juego_key = ?) AS descripcion,
                 COALESCE((SELECT visitas FROM juegos_visitas WHERE juego_key = ?), 0) AS visitas,
-                (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = ?) AS likes,
+                votos.likes,
+                votos.dislikes,
+                CASE
+                    WHEN votos.likes + votos.dislikes = 0 THEN NULL
+                    ELSE ROUND(10.0 * votos.likes / (votos.likes + votos.dislikes), 1)
+                END AS puntuacion_comunidad,
+                COALESCE((SELECT visitas FROM juegos_visitas WHERE juego_key = ?), 0)
+                    + 2 * votos.likes AS popularidad,
                 EXISTS(
                     SELECT 1 FROM juegos_likes
                     WHERE juego_key = ? AND usuario_id = ?
-                ) AS liked_by_user`,
+                ) AS liked_by_user,
+                EXISTS(
+                    SELECT 1 FROM juegos_dislikes
+                    WHERE juego_key = ? AND usuario_id = ?
+                ) AS disliked_by_user
+         FROM votos`,
         [
             gameKey,
             gameKey,
@@ -401,6 +678,10 @@ app.get("/engagement/juegos/:gameKey", (req, res) => {
             gameKey,
             gameKey,
             gameKey,
+            gameKey,
+            gameKey,
+            gameKey,
+            Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0,
             gameKey,
             Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0,
         ],
@@ -420,72 +701,169 @@ app.get("/engagement/juegos/:gameKey", (req, res) => {
 app.post("/engagement/juegos/:gameKey/visita", (req, res) => {
     const nombre = typeof req.body?.juego?.nombre === "string" ? req.body.juego.nombre.trim() : "";
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
-    const genero = typeof req.body?.juego?.genero === "string" ? req.body.juego.genero.trim() : "";
-    const imagen = typeof req.body?.juego?.imagen === "string" ? req.body.juego.imagen.trim() : "";
-    const descripcion = typeof req.body?.juego?.descripcion === "string" ? req.body.juego.descripcion.trim() : "";
+    const juegoRecibido = req.body?.juego || {};
     const usuarioId = Number(req.body?.usuarioId);
     const usuarioIdValido = Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0;
+    const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId.trim() : "";
+    const visitanteKey = usuarioIdValido
+        ? `usuario:${usuarioIdValido}`
+        : /^[A-Za-z0-9._:-]{8,128}$/.test(sessionId)
+            ? `sesion:${sessionId}`
+            : null;
 
     if (!nombre || !gameKey || normalizarClaveJuego(nombre) !== gameKey) {
         return res.status(400).json({ success: false, mensaje: "No se pudo identificar el juego." });
     }
 
-    db.run(
-        `INSERT INTO juegos_visitas(juego_key, nombre, genero, imagen, descripcion, visitas)
-         VALUES(?, ?, ?, ?, ?, 1)
-         ON CONFLICT(juego_key) DO UPDATE SET
-            nombre = excluded.nombre,
-            genero = excluded.genero,
-            imagen = excluded.imagen,
-            descripcion = excluded.descripcion,
-            visitas = juegos_visitas.visitas + 1`,
-        [gameKey, nombre, genero, imagen, descripcion],
-        (err) => {
-            if (err) {
-                return res.status(500).json({
+    db.get(
+        "SELECT nombre, genero, imagen, descripcion FROM juegos WHERE nombre_key = ? ORDER BY id ASC LIMIT 1",
+        [gameKey],
+        (gameError, juegoGuardado) => {
+            if (gameError) {
+                return res.status(500).json({ success: false, mensaje: "No se pudo cargar el juego." });
+            }
+
+            if (!juegoGuardado && !TITULOS_JUEGOS_PERMITIDOS.has(gameKey)) {
+                return res.status(404).json({
                     success: false,
-                    mensaje: "No se pudo registrar la visita."
+                    mensaje: "Este juego no existe o ya no está disponible en Zenkai Games.",
+                    code: "GAME_NOT_FOUND",
                 });
             }
 
-            db.get(
-                `SELECT visitas.juego_key, visitas.nombre, visitas.genero, visitas.imagen,
-                        visitas.descripcion, visitas.visitas,
-                        (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = visitas.juego_key) AS likes,
-                        EXISTS(
-                            SELECT 1 FROM juegos_likes
-                            WHERE juego_key = visitas.juego_key AND usuario_id = ?
-                        ) AS liked_by_user,
-                        visitas.visitas + (
-                            SELECT COUNT(*) FROM juegos_likes WHERE juego_key = visitas.juego_key
-                        ) AS interes_total
-                 FROM juegos_visitas AS visitas
-                 WHERE visitas.juego_key = ?`,
-                [usuarioIdValido, gameKey],
-                (statsError, juego) => {
-                    if (statsError) {
+            const tieneDescripcionPropia = Boolean(juegoGuardado);
+            const juego = juegoGuardado || {
+                nombre,
+                genero: typeof juegoRecibido.genero === "string" ? juegoRecibido.genero.trim() : "",
+                imagen: typeof juegoRecibido.imagen === "string" ? juegoRecibido.imagen.trim() : "",
+                descripcion: typeof juegoRecibido.descripcion === "string" ? juegoRecibido.descripcion.trim() : "",
+            };
+
+            db.run(
+                `INSERT INTO juegos_visitas(juego_key, nombre, genero, imagen, descripcion, visitas)
+                 VALUES(?, ?, ?, ?, ?, 0)
+                 ON CONFLICT(juego_key) DO UPDATE SET
+                    nombre = excluded.nombre,
+                    genero = excluded.genero,
+                    imagen = excluded.imagen,
+                    descripcion = CASE WHEN ? = 1 THEN excluded.descripcion ELSE juegos_visitas.descripcion END`,
+                [
+                    gameKey,
+                    juego.nombre,
+                    juego.genero || "",
+                    juego.imagen || "",
+                    juego.descripcion || "",
+                    tieneDescripcionPropia ? 1 : 0,
+                ],
+                (metadataError) => {
+                    if (metadataError) {
                         return res.status(500).json({
                             success: false,
-                            mensaje: "La visita se registró, pero no se pudieron cargar las estadísticas."
+                            mensaje: "No se pudo registrar la visita."
                         });
                     }
 
-                    return res.json({ success: true, juego });
+                    const cargarEstadisticas = (visitaContada) => {
+                        db.get(
+                            `WITH votos AS (
+                                 SELECT
+                                     (SELECT COUNT(*) FROM juegos_likes WHERE juego_key = ?) AS likes,
+                                     (SELECT COUNT(*) FROM juegos_dislikes WHERE juego_key = ?) AS dislikes
+                             )
+                             SELECT visitas.juego_key, visitas.nombre, visitas.genero, visitas.imagen,
+                                    visitas.descripcion, visitas.visitas,
+                                    votos.likes, votos.dislikes,
+                                    CASE
+                                        WHEN votos.likes + votos.dislikes = 0 THEN NULL
+                                        ELSE ROUND(10.0 * votos.likes / (votos.likes + votos.dislikes), 1)
+                                    END AS puntuacion_comunidad,
+                                    visitas.visitas + 2 * votos.likes AS popularidad,
+                                    EXISTS(
+                                        SELECT 1 FROM juegos_likes
+                                        WHERE juego_key = visitas.juego_key AND usuario_id = ?
+                                    ) AS liked_by_user,
+                                    EXISTS(
+                                        SELECT 1 FROM juegos_dislikes
+                                        WHERE juego_key = visitas.juego_key AND usuario_id = ?
+                                    ) AS disliked_by_user
+                             FROM juegos_visitas AS visitas
+                             CROSS JOIN votos
+                             WHERE visitas.juego_key = ?`,
+                            [gameKey, gameKey, usuarioIdValido, usuarioIdValido, gameKey],
+                            (statsError, resultado) => {
+                                if (statsError) {
+                                    return res.status(500).json({
+                                        success: false,
+                                        mensaje: "La visita se registró, pero no se pudieron cargar las estadísticas."
+                                    });
+                                }
+                                resultado.view_counted = visitaContada;
+                                return res.json({ success: true, juego: resultado });
+                            }
+                        );
+                    };
+
+                    if (!visitanteKey) {
+                        cargarEstadisticas(false);
+                        return;
+                    }
+
+                    db.run(
+                        "INSERT OR IGNORE INTO juegos_visitas_unicas(juego_key, visitante_key) VALUES(?, ?)",
+                        [gameKey, visitanteKey],
+                        function (visitorError) {
+                            if (visitorError) {
+                                return res.status(500).json({
+                                    success: false,
+                                    mensaje: "No se pudo registrar la visita."
+                                });
+                            }
+
+                            const actualizarContador = (visitaContada) => {
+                                if (!visitaContada) {
+                                    cargarEstadisticas(false);
+                                    return;
+                                }
+
+                                db.run(
+                                    "UPDATE juegos_visitas SET visitas = visitas + 1 WHERE juego_key = ?",
+                                    [gameKey],
+                                    (countError) => {
+                                        if (countError) {
+                                            return res.status(500).json({
+                                                success: false,
+                                                mensaje: "No se pudo actualizar el contador de visitas."
+                                            });
+                                        }
+                                        cargarEstadisticas(true);
+                                    }
+                                );
+                            };
+
+                            actualizarContador(this.changes > 0);
+                        }
+                    );
                 }
             );
         }
     );
 });
 
-app.post("/engagement/juegos/:gameKey/like", (req, res) => {
+const actualizarVotoJuego = (req, res, tipoVoto, quitarVoto = false) => {
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
-    const usuarioId = Number(req.body?.usuarioId);
+    const usuarioId = Number(quitarVoto ? req.query.usuarioId : req.body?.usuarioId);
+    const tablaVoto = tipoVoto === "like" ? "juegos_likes" : "juegos_dislikes";
+    const tablaOpuesta = tipoVoto === "like" ? "juegos_dislikes" : "juegos_likes";
+    const etiquetaVoto = tipoVoto === "like" ? "me gusta" : "no me gusta";
 
     if (!gameKey || !Number.isInteger(usuarioId) || usuarioId < 1) {
         return res.status(400).json({ success: false, mensaje: "El juego o la cuenta no son válidos." });
     }
 
-    db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
+    const registrarVoto = () => db.get(
+        "SELECT id FROM usuarios WHERE id = ?",
+        [usuarioId],
+        (userError, usuario) => {
         if (userError) {
             return res.status(500).json({ success: false, mensaje: "No se pudo verificar la cuenta." });
         }
@@ -493,75 +871,181 @@ app.post("/engagement/juegos/:gameKey/like", (req, res) => {
             return res.status(404).json({ success: false, mensaje: "No se encontró la cuenta." });
         }
 
-        db.run(
-            "INSERT OR IGNORE INTO juegos_likes(juego_key, usuario_id) VALUES(?, ?)",
-            [gameKey, usuarioId],
-            (likeError) => {
-                if (likeError) {
-                    return res.status(500).json({ success: false, mensaje: "No se pudo dar me gusta." });
+        if (quitarVoto) {
+            return db.run(
+                `DELETE FROM ${tablaVoto} WHERE juego_key = ? AND usuario_id = ?`,
+                [gameKey, usuarioId],
+                (deleteError) => {
+                    if (deleteError) {
+                        return res.status(500).json({
+                            success: false,
+                            mensaje: `No se pudo quitar el voto "${etiquetaVoto}".`
+                        });
+                    }
+
+                    return res.json({ success: true, mensaje: "Voto quitado." });
                 }
+            );
+        }
 
-                return res.json({ success: true, mensaje: "Me gusta guardado." });
-            }
-        );
-    });
-});
-
-app.delete("/engagement/juegos/:gameKey/like", (req, res) => {
-    const gameKey = normalizarClaveJuego(req.params.gameKey || "");
-    const usuarioId = Number(req.query.usuarioId);
-
-    if (!gameKey || !Number.isInteger(usuarioId) || usuarioId < 1) {
-        return res.status(400).json({ success: false, mensaje: "El juego o la cuenta no son válidos." });
-    }
-
-    db.run(
-        "DELETE FROM juegos_likes WHERE juego_key = ? AND usuario_id = ?",
-        [gameKey, usuarioId],
-        (err) => {
-            if (err) {
-                return res.status(500).json({ success: false, mensaje: "No se pudo quitar el me gusta." });
+        const iniciarTransaccion = () => db.run("BEGIN IMMEDIATE", (transactionError) => {
+            if (transactionError) {
+                return res.status(500).json({ success: false, mensaje: "No se pudo guardar el voto." });
             }
 
-            return res.json({ success: true, mensaje: "Me gusta quitado." });
+            const rollback = (message) => db.run("ROLLBACK", (rollbackError) => {
+                if (rollbackError) {
+                    console.error("No se pudo revertir la actualización del voto:", rollbackError);
+                }
+                return res.status(500).json({ success: false, mensaje: message });
+            });
+
+            db.run(
+                `DELETE FROM ${tablaOpuesta} WHERE juego_key = ? AND usuario_id = ?`,
+                [gameKey, usuarioId],
+                (deleteError) => {
+                    if (deleteError) return rollback("No se pudo actualizar el voto anterior.");
+
+                    db.run(
+                        `INSERT OR IGNORE INTO ${tablaVoto}(juego_key, usuario_id) VALUES(?, ?)`,
+                        [gameKey, usuarioId],
+                        (insertError) => {
+                            if (insertError) return rollback(`No se pudo guardar "${etiquetaVoto}".`);
+
+                            db.run("COMMIT", (commitError) => {
+                                if (commitError) return rollback("No se pudo confirmar el voto.");
+                                return res.json({ success: true, mensaje: "Voto guardado." });
+                            });
+                        }
+                    );
+                }
+            );
+        });
+
+        const juegoRecibido = req.body?.juego || {};
+        const nombreJuego = typeof juegoRecibido.nombre === "string" ? juegoRecibido.nombre.trim() : "";
+        if (!quitarVoto && nombreJuego && normalizarClaveJuego(nombreJuego) === gameKey) {
+            const genero = typeof juegoRecibido.genero === "string" ? juegoRecibido.genero.trim() : "";
+            const descripcion = typeof juegoRecibido.descripcion === "string" ? juegoRecibido.descripcion.trim() : "";
+            const imagen = typeof juegoRecibido.imagen === "string" && !juegoRecibido.imagen.startsWith("data:")
+                ? juegoRecibido.imagen.trim()
+                : "";
+            return db.run(
+                `INSERT OR IGNORE INTO juegos_visitas(juego_key, nombre, genero, imagen, descripcion, visitas)
+                 VALUES(?, ?, ?, ?, ?, 0)`,
+                [gameKey, nombreJuego, genero, imagen, descripcion],
+                (metadataError) => {
+                    if (metadataError) {
+                        return res.status(500).json({ success: false, mensaje: "No se pudo registrar el juego." });
+                    }
+                    return iniciarTransaccion();
+                }
+            );
+        }
+
+            return iniciarTransaccion();
         }
     );
+
+    if (TITULOS_JUEGOS_PERMITIDOS.has(gameKey)) {
+        return registrarVoto();
+    }
+
+    return db.get(
+        "SELECT id FROM juegos WHERE nombre_key = ?",
+        [gameKey],
+        (gameError, juegoRegistrado) => {
+            if (gameError) {
+                return res.status(500).json({ success: false, mensaje: "No se pudo verificar el juego." });
+            }
+            if (!juegoRegistrado) {
+                return res.status(404).json({
+                    success: false,
+                    mensaje: "Este juego no existe en el catálogo de Zenkai Games.",
+                    code: "GAME_NOT_FOUND",
+                });
+            }
+            return registrarVoto();
+        }
+    );
+};
+
+app.post("/engagement/juegos/:gameKey/like", (req, res) => {
+    actualizarVotoJuego(req, res, "like");
+});
+app.delete("/engagement/juegos/:gameKey/like", (req, res) => {
+    actualizarVotoJuego(req, res, "like", true);
+});
+app.post("/engagement/juegos/:gameKey/dislike", (req, res) => {
+    actualizarVotoJuego(req, res, "dislike");
+});
+app.delete("/engagement/juegos/:gameKey/dislike", (req, res) => {
+    actualizarVotoJuego(req, res, "dislike", true);
 });
 
 // Obtener un juego por ID
 app.get("/juegos/:id", (req, res) => {
     const { id } = req.params;
-    db.get("SELECT * FROM juegos WHERE id = ?", [id], (err, juegos) => {
-        if (err){
-            return res.status(500).json({
-                success: false,
-                mensaje: "Error al buscar el juego",
-                error: err.message
+    db.get(
+        `SELECT juegos.id, juegos.nombre, juegos.genero, juegos.puntuacion,
+                juegos.plataforma, juegos.etiqueta, juegos.imagen, juegos.descripcion,
+                juegos.catalog_key,
+                COALESCE(visitas.visitas, 0) AS visitas,
+                COALESCE(likes.likes, 0) AS likes,
+                COALESCE(dislikes.dislikes, 0) AS dislikes,
+                CASE
+                    WHEN COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0) = 0 THEN NULL
+                    ELSE ROUND(
+                        10.0 * COALESCE(likes.likes, 0)
+                        / (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)),
+                        1
+                    )
+                END AS puntuacion_comunidad,
+                COALESCE(visitas.visitas, 0) + 2 * COALESCE(likes.likes, 0) AS popularidad
+         FROM juegos
+         LEFT JOIN juegos_visitas AS visitas ON visitas.juego_key = juegos.nombre_key
+         LEFT JOIN (
+             SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
+         ) AS likes ON likes.juego_key = juegos.nombre_key
+         LEFT JOIN (
+             SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
+         ) AS dislikes ON dislikes.juego_key = juegos.nombre_key
+         WHERE juegos.id = ?
+         `,
+        [id],
+        (err, juegos) => {
+            if (err){
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "Error al buscar el juego",
+                    error: err.message
+                });
+            }
+
+            if (!juegos) {
+                return res.status(404).json({
+                    success: false,
+                    mensaje: "Juego no encontrado"
+                });
+            }
+
+            return res.json({
+                success: true,
+                juego: juegos
             });
         }
-
-        if (!juegos) {
-            return res.status(404).json({
-                success: false,
-                mensaje: "Juego no encontrado"
-          });
-        }
-
-        return res.json({
-            success: true,
-            juego: juegos
-        });
-    });
+    );
 });
 
 // Crear un juego nuevo
-app.post("/juegos", (req, res) => {
+app.post("/juegos", requerirSesion, (req, res) => {
     const errorValidacion = validarDatosJuego(req.body);
     if (errorValidacion) {
         return res.status(400).json({ success: false, mensaje: errorValidacion });
     }
 
     const { nombre, genero, plataforma, etiqueta, imagen, descripcion } = req.body;
+    const nombreKey = normalizarClaveJuego(nombre);
     const puntuacion = req.body.puntuacion === undefined
         || req.body.puntuacion === null
         || req.body.puntuacion === ""
@@ -569,50 +1053,82 @@ app.post("/juegos", (req, res) => {
         : Number(req.body.puntuacion);
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
 
-    db.run(
-        `
-        INSERT INTO juegos(nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion, catalog_key)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [nombre.trim(), genero.trim(), puntuacion, plataforma, etiqueta, imagen.trim(), descripcion.trim(), catalogKey],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "Error al crear el juego",
-                    error: err.message
-                });
-            }
-
-            const id = this.lastID;
-            const responderCreacion = () => res.status(201).json({
-                success: true,
-                mensaje: "Juego creado correctamente",
-                id
-            });
-
-            if (!catalogKey) return responderCreacion();
-
-            db.run(
-                "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
-                [catalogKey],
-                (restoreError) => {
-                    if (restoreError) {
-                        return res.status(500).json({
-                            success: false,
-                            mensaje: "El juego se guardó, pero no se pudo actualizar el catálogo."
-                        });
-                    }
-
-                    return responderCreacion();
-                }
-            );
+    db.get(
+        `SELECT id FROM juegos
+         WHERE nombre_key = ?
+            OR (? = 'resident evil 4' AND nombre_key = 'resident evil 4 remake')`,
+        [nombreKey, nombreKey],
+        (duplicateError, duplicate) => {
+        if (duplicateError) {
+            return res.status(500).json({ success: false, mensaje: "No se pudo validar el nombre del juego." });
         }
-    );
+        if (duplicate) {
+            return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
+        }
+
+        const titleError = validarTituloJuego(nombre);
+        if (titleError) {
+            return res.status(400).json({ success: false, mensaje: titleError });
+        }
+
+        db.run(
+            `INSERT INTO juegos(
+                nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion,
+                catalog_key, nombre_key, created_at
+             ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+                nombre.trim(),
+                genero.trim(),
+                puntuacion,
+                plataforma,
+                etiqueta,
+                imagen.trim(),
+                descripcion.trim(),
+                catalogKey,
+                nombreKey,
+            ],
+            function (err) {
+                if (err) {
+                    if (esNombreDuplicado(err)) {
+                        return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
+                    }
+                    return res.status(500).json({
+                        success: false,
+                        mensaje: "Error al crear el juego",
+                        error: err.message
+                    });
+                }
+
+                const id = this.lastID;
+                const responderCreacion = () => res.status(201).json({
+                    success: true,
+                    mensaje: "Juego creado correctamente",
+                    id
+                });
+
+                if (!catalogKey) return responderCreacion();
+
+                db.run(
+                    "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
+                    [catalogKey],
+                    (restoreError) => {
+                        if (restoreError) {
+                            return res.status(500).json({
+                                success: false,
+                                mensaje: "El juego se guardó, pero no se pudo actualizar el catálogo."
+                            });
+                        }
+
+                        return responderCreacion();
+                    }
+                );
+            }
+        );
+    });
 });
 
 // Editar un juego
-app.put("/juegos/:id", (req, res) => {
+app.put("/juegos/:id", requerirAdministrador, (req, res) => {
     const errorValidacion = validarDatosJuego(req.body);
     if (errorValidacion) {
         return res.status(400).json({ success: false, mensaje: errorValidacion });
@@ -622,51 +1138,88 @@ app.put("/juegos/:id", (req, res) => {
     const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
 
-    db.run(
-        `
-        UPDATE juegos
-        SET nombre = ?, genero = ?, puntuacion = ?, plataforma = ?, etiqueta = ?, imagen = ?, descripcion = ?, catalog_key = ?
-        WHERE id = ?
-        `,
-        [nombre.trim(), genero.trim(), puntuacion, plataforma, etiqueta, imagen.trim(), descripcion.trim(), catalogKey, id],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "Error al actualizar el juego",
-                    error: err.message
-                });
-            }
-
-            const cambios = this.changes;
-            const responderActualizacion = () => res.json({
-                success: true,
-                mensaje: "Juego actualizado correctamente",
-                cambios
-            });
-
-            if (!catalogKey) return responderActualizacion();
-
-            db.run(
-                "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
-                [catalogKey],
-                (restoreError) => {
-                    if (restoreError) {
-                        return res.status(500).json({
-                            success: false,
-                            mensaje: "El juego se actualizó, pero no se pudo actualizar el catálogo."
-                        });
-                    }
-
-                    return responderActualizacion();
-                }
-            );
+    db.get("SELECT nombre FROM juegos WHERE id = ?", [id], (gameError, juegoActual) => {
+        if (gameError) {
+            return res.status(500).json({ success: false, mensaje: "No se pudo validar el juego." });
         }
-    );
+
+        db.get(
+            "SELECT id FROM juegos WHERE nombre_key = ? AND id != ?",
+            [normalizarClaveJuego(nombre), id],
+            (duplicateError, duplicate) => {
+                if (duplicateError) {
+                    return res.status(500).json({ success: false, mensaje: "No se pudo validar el nombre del juego." });
+                }
+                if (duplicate) {
+                    return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
+                }
+
+                const titleError = juegoActual ? validarTituloJuego(nombre, juegoActual.nombre) : null;
+                if (titleError) {
+                    return res.status(400).json({ success: false, mensaje: titleError });
+                }
+
+                db.run(
+                    `UPDATE juegos
+                     SET nombre = ?, nombre_key = ?, genero = ?, puntuacion = ?, plataforma = ?,
+                         etiqueta = ?, imagen = ?, descripcion = ?, catalog_key = ?
+                     WHERE id = ?`,
+                    [
+                        nombre.trim(),
+                        normalizarClaveJuego(nombre),
+                        genero.trim(),
+                        puntuacion,
+                        plataforma,
+                        etiqueta,
+                        imagen.trim(),
+                        descripcion.trim(),
+                        catalogKey,
+                        id,
+                    ],
+                    function (err) {
+                        if (err) {
+                            if (esNombreDuplicado(err)) {
+                                return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
+                            }
+                            return res.status(500).json({
+                                success: false,
+                                mensaje: "Error al actualizar el juego",
+                                error: err.message
+                            });
+                        }
+
+                        const cambios = this.changes;
+                        const responderActualizacion = () => res.json({
+                            success: true,
+                            mensaje: "Juego actualizado correctamente",
+                            cambios
+                        });
+
+                        if (!catalogKey) return responderActualizacion();
+
+                        db.run(
+                            "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
+                            [catalogKey],
+                            (restoreError) => {
+                                if (restoreError) {
+                                    return res.status(500).json({
+                                        success: false,
+                                        mensaje: "El juego se actualizó, pero no se pudo actualizar el catálogo."
+                                    });
+                                }
+
+                                return responderActualizacion();
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    });
 });
 
 // Eliminar un juego
-app.delete("/juegos/:id", (req, res) => {
+app.delete("/juegos/:id", requerirAdministrador, (req, res) => {
     const { id } = req.params;
     const catalogKey = typeof req.body?.catalogKey === "string" ? req.body.catalogKey : "";
 
@@ -738,10 +1291,7 @@ app.post("/usuarios/:usuarioId/favoritos", (req, res) => {
     const genero = typeof juego?.genero === "string" ? juego.genero.trim() : "";
     const imagen = typeof juego?.imagen === "string" ? juego.imagen.trim() : "";
     const descripcion = typeof juego?.descripcion === "string" ? juego.descripcion.trim() : "";
-    const juegoKey = nombre
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLocaleLowerCase();
+    const juegoKey = normalizarClaveJuego(nombre);
 
     if (!nombre) {
         return res.status(400).json({

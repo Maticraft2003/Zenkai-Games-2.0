@@ -2,6 +2,7 @@ import sqlite3 from "sqlite3";
 import bcrypt from "bcrypt";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
+import { normalizarClaveJuego } from "./gameKeys.js";
 
 const databasePath = resolve(
     dirname(fileURLToPath(import.meta.url)),
@@ -56,7 +57,8 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                             plataforma TEXT,
                             etiqueta TEXT,
                             imagen TEXT,
-                            descripcion TEXT
+                            descripcion TEXT,
+                            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                         )`,
                         (gameTableError) => {
                             if (gameTableError) {
@@ -181,18 +183,48 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                                                                 }
 
                                                                                                 db.run(
-                                                                                                    `CREATE TABLE IF NOT EXISTS juegos_likes (
-                                                                                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                                                    `CREATE TABLE IF NOT EXISTS juegos_visitas_unicas (
                                                                                                         juego_key TEXT NOT NULL,
-                                                                                                        usuario_id INTEGER NOT NULL,
-                                                                                                        UNIQUE(juego_key, usuario_id)
+                                                                                                        visitante_key TEXT NOT NULL,
+                                                                                                        PRIMARY KEY(juego_key, visitante_key)
                                                                                                     )`,
-                                                                                                    (gameLikesTableError) => {
+                                                                                                    (uniqueVisitsTableError) => {
+                                                                                                        if (uniqueVisitsTableError) {
+                                                                                                            rechazarInicializacion(uniqueVisitsTableError);
+                                                                                                            return;
+                                                                                                        }
+
+                                                                                                        db.run(
+                                                                                                            `CREATE TABLE IF NOT EXISTS juegos_likes (
+                                                                                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                                                                juego_key TEXT NOT NULL,
+                                                                                                                usuario_id INTEGER NOT NULL,
+                                                                                                                UNIQUE(juego_key, usuario_id)
+                                                                                                            )`,
+                                                                                                            (gameLikesTableError) => {
                                                                                                         if (gameLikesTableError) {
                                                                                                             rechazarInicializacion(gameLikesTableError);
                                                                                                             return;
                                                                                                         }
 
+                                                                                                        db.run(
+                                                                                                            `CREATE TABLE IF NOT EXISTS juegos_dislikes (
+                                                                                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                                                                juego_key TEXT NOT NULL,
+                                                                                                                usuario_id INTEGER NOT NULL,
+                                                                                                                UNIQUE(juego_key, usuario_id)
+                                                                                                            )`,
+                                                                                                            (gameDislikesTableError) => {
+                                                                                                        if (gameDislikesTableError) {
+                                                                                                            rechazarInicializacion(gameDislikesTableError);
+                                                                                                            return;
+                                                                                                        }
+
+                                                                                                        inicializarTablasAuth(db, (authError) => {
+                                                                                                            if (authError) {
+                                                                                                                rechazarInicializacion(authError);
+                                                                                                                return;
+                                                                                                            }
                                                                                                         db.all("SELECT id, password FROM usuarios", async (usersError, users) => {
                                                                                                             if (usersError) {
                                                                                                                 rechazarInicializacion(usersError);
@@ -223,8 +255,7 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                                                                                 rechazarInicializacion(passwordMigrationError);
                                                                                                             }
                                                                                                         });
-                                                                                                    }
-                                                                                                );
+                                        });
                                                                     }
                                                                 );
                                                                                             }
@@ -241,6 +272,12 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                 );
                                             }
                                         );
+                                            }
+                                        );
+                                            }
+                                        );
+                                            }
+                                        );
                             };
 
                             db.all("PRAGMA table_info(juegos)", (tableError, columns) => {
@@ -249,9 +286,64 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                     return;
                                 }
 
+                                const asegurarNombreKey = () => {
+                                    const crearIndiceUnico = () => {
+                                        db.all("SELECT id, nombre FROM juegos", (gamesError, games) => {
+                                            if (gamesError) {
+                                                rechazarInicializacion(gamesError);
+                                                return;
+                                            }
+
+                                            const actualizarClave = (indice) => {
+                                                if (indice >= games.length) {
+                                                    db.run(
+                                                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_juegos_nombre_key ON juegos(nombre_key)",
+                                                        (indexError) => {
+                                                            if (indexError) {
+                                                                rechazarInicializacion(indexError);
+                                                                return;
+                                                            }
+                                                            inicializarTablasDeContenido();
+                                                        }
+                                                    );
+                                                    return;
+                                                }
+
+                                                const juego = games[indice];
+                                                db.run(
+                                                    "UPDATE juegos SET nombre_key = ? WHERE id = ? AND nombre_key IS NOT ?",
+                                                    [normalizarClaveJuego(juego.nombre), juego.id, normalizarClaveJuego(juego.nombre)],
+                                                    (updateError) => {
+                                                        if (updateError) {
+                                                            rechazarInicializacion(updateError);
+                                                            return;
+                                                        }
+                                                        actualizarClave(indice + 1);
+                                                    }
+                                                );
+                                            };
+
+                                            actualizarClave(0);
+                                        });
+                                    };
+
+                                    if (columns.some((column) => column.name === "nombre_key")) {
+                                        crearIndiceUnico();
+                                        return;
+                                    }
+
+                                    db.run("ALTER TABLE juegos ADD COLUMN nombre_key TEXT", (migrationError) => {
+                                        if (migrationError) {
+                                            rechazarInicializacion(migrationError);
+                                            return;
+                                        }
+                                        crearIndiceUnico();
+                                    });
+                                };
+
                                 const asegurarCatalogKey = () => {
                                     if (columns.some((column) => column.name === "catalog_key")) {
-                                        inicializarTablasDeContenido();
+                                        asegurarNombreKey();
                                         return;
                                     }
 
@@ -260,13 +352,37 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                             rechazarInicializacion(migrationError);
                                             return;
                                         }
+                                        asegurarNombreKey();
+                                    });
+                                };
 
-                                        inicializarTablasDeContenido();
+                                const asegurarCreatedAt = () => {
+                                    if (columns.some((column) => column.name === "created_at")) {
+                                        asegurarCatalogKey();
+                                        return;
+                                    }
+
+                                    db.run("ALTER TABLE juegos ADD COLUMN created_at TEXT", (migrationError) => {
+                                        if (migrationError) {
+                                            rechazarInicializacion(migrationError);
+                                            return;
+                                        }
+
+                                        db.run(
+                                            "UPDATE juegos SET created_at = '1970-01-01 00:00:00' WHERE created_at IS NULL",
+                                            (backfillError) => {
+                                                if (backfillError) {
+                                                    rechazarInicializacion(backfillError);
+                                                    return;
+                                                }
+                                                asegurarCatalogKey();
+                                            }
+                                        );
                                     });
                                 };
 
                                 if (columns.some((column) => column.name === "etiqueta")) {
-                                    asegurarCatalogKey();
+                                    asegurarCreatedAt();
                                     return;
                                 }
 
@@ -276,7 +392,7 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                         return;
                                     }
 
-                                    asegurarCatalogKey();
+                                    asegurarCreatedAt();
                                 });
                             });
                         }
@@ -286,5 +402,51 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
         }
     );
 });
+
+function inicializarTablasAuth(database, callback) {
+    const consultas = [
+        (next) => database.run(
+            `CREATE TABLE IF NOT EXISTS user_roles (
+                user_id INTEGER PRIMARY KEY,
+                role TEXT NOT NULL DEFAULT 'usuario'
+            )`,
+            next
+        ),
+        (next) => database.run(
+            `CREATE TABLE IF NOT EXISTS auth_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL
+            )`,
+            next
+        ),
+        (next) => database.run(
+            "INSERT OR IGNORE INTO user_roles(user_id) SELECT id FROM usuarios",
+            next
+        ),
+        (next) => database.run(
+            `UPDATE user_roles SET role = 'admin'
+             WHERE user_id = (SELECT id FROM usuarios WHERE email = 'admin@gmail.com')`,
+            next
+        ),
+    ];
+
+    const ejecutarSiguiente = (indice) => {
+        if (indice === consultas.length) {
+            callback(null);
+            return;
+        }
+
+        consultas[indice]((error) => {
+            if (error) {
+                callback(error);
+                return;
+            }
+            ejecutarSiguiente(indice + 1);
+        });
+    };
+
+    ejecutarSiguiente(0);
+}
 
 export default db;
