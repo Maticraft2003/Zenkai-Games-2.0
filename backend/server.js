@@ -149,6 +149,38 @@ const requerirAdministrador = (req, res, next) => {
     );
 };
 
+const requerirPropietarioComunidad = (req, res, next) => {
+    db.get(
+        `SELECT comunidad.owner_user_id,
+                COALESCE(user_roles.role, 'usuario') AS role
+         FROM comunidad
+         LEFT JOIN user_roles ON user_roles.user_id = ?
+         WHERE comunidad.id = ?`,
+        [req.usuarioId, req.params.id],
+        (error, publicacion) => {
+            if (error) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudo verificar el permiso sobre la publicación.",
+                });
+            }
+
+            if (!publicacion) {
+                return res.status(404).json({ success: false, mensaje: "Publicación no encontrada." });
+            }
+
+            if (publicacion.role !== "admin" && publicacion.owner_user_id !== req.usuarioId) {
+                return res.status(403).json({
+                    success: false,
+                    mensaje: "Solo quien creó esta publicación o un administrador puede modificarla.",
+                });
+            }
+
+            return next();
+        }
+    );
+};
+
 const validarDatosJuego = (datos) => {
     const camposObligatorios = [
         ["nombre", "El nombre"],
@@ -431,8 +463,11 @@ app.post("/register", (req, res) => {
     });
 });
 
-app.get("/perfil/:id", (req, res) => {
-    const { id } = req.params;
+app.get("/perfil/:id", requerirSesion, (req, res) => {
+    if (Number(req.params.id) !== req.usuarioId) {
+        return res.status(403).json({ success: false, mensaje: "No podés consultar el perfil de otra cuenta." });
+    }
+    const id = req.usuarioId;
 
     db.get(
         `SELECT usuarios.id, usuarios.username, usuarios.email,
@@ -461,8 +496,11 @@ app.get("/perfil/:id", (req, res) => {
     );
 });
 
-app.patch("/perfil/:id", (req, res) => {
-    const { id } = req.params;
+app.patch("/perfil/:id", requerirSesion, (req, res) => {
+    if (Number(req.params.id) !== req.usuarioId) {
+        return res.status(403).json({ success: false, mensaje: "No podés modificar el perfil de otra cuenta." });
+    }
+    const id = req.usuarioId;
     const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
     const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
     const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
@@ -1441,9 +1479,9 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
     });
 
     if (ruta === "comunidad") {
-        app.get("/comunidad/:publicacionId/comentarios", (req, res) => {
+        app.get("/comunidad/:publicacionId/comentarios", permitirSesionOpcional, (req, res) => {
             const publicacionId = Number(req.params.publicacionId);
-            const usuarioId = Number(req.query.usuarioId);
+            const usuarioId = req.usuarioId || 0;
 
             if (!Number.isInteger(publicacionId) || publicacionId < 1) {
                 return res.status(400).json({ success: false, mensaje: "La publicación no es válida." });
@@ -1462,7 +1500,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
                  JOIN usuarios ON usuarios.id = comentarios.usuario_id
                  WHERE comentarios.publicacion_id = ?
                  ORDER BY comentarios.id ASC`,
-                [Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0, publicacionId],
+                [usuarioId, publicacionId],
                 (err, comentarios) => {
                     if (err) {
                         return res.status(500).json({
@@ -1476,13 +1514,12 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             );
         });
 
-        app.post("/comunidad/:publicacionId/comentarios", (req, res) => {
+        app.post("/comunidad/:publicacionId/comentarios", requerirSesion, (req, res) => {
             const publicacionId = Number(req.params.publicacionId);
-            const usuarioId = Number(req.body?.usuarioId);
+            const usuarioId = req.usuarioId;
             const contenido = typeof req.body?.contenido === "string" ? req.body.contenido.trim() : "";
 
             if (!Number.isInteger(publicacionId) || publicacionId < 1
-                || !Number.isInteger(usuarioId) || usuarioId < 1
                 || !contenido || contenido.length > 1000) {
                 return res.status(400).json({
                     success: false,
@@ -1529,13 +1566,12 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             });
         });
 
-        app.post("/comunidad/comentarios/:comentarioId/like", (req, res) => {
+        app.post("/comunidad/comentarios/:comentarioId/like", requerirSesion, (req, res) => {
             const comentarioId = Number(req.params.comentarioId);
-            const usuarioId = Number(req.body?.usuarioId);
+            const usuarioId = req.usuarioId;
 
-            if (!Number.isInteger(comentarioId) || comentarioId < 1
-                || !Number.isInteger(usuarioId) || usuarioId < 1) {
-                return res.status(400).json({ success: false, mensaje: "El comentario o la cuenta no son válidos." });
+            if (!Number.isInteger(comentarioId) || comentarioId < 1) {
+                return res.status(400).json({ success: false, mensaje: "El comentario no es válido." });
             }
 
             db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
@@ -1570,13 +1606,12 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             });
         });
 
-        app.delete("/comunidad/comentarios/:comentarioId/like", (req, res) => {
+        app.delete("/comunidad/comentarios/:comentarioId/like", requerirSesion, (req, res) => {
             const comentarioId = Number(req.params.comentarioId);
-            const usuarioId = Number(req.query.usuarioId);
+            const usuarioId = req.usuarioId;
 
-            if (!Number.isInteger(comentarioId) || comentarioId < 1
-                || !Number.isInteger(usuarioId) || usuarioId < 1) {
-                return res.status(400).json({ success: false, mensaje: "El comentario o la cuenta no son válidos." });
+            if (!Number.isInteger(comentarioId) || comentarioId < 1) {
+                return res.status(400).json({ success: false, mensaje: "El comentario no es válido." });
             }
 
             db.run(
@@ -1593,7 +1628,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         });
     }
 
-    app.post(`/${ruta}`, (req, res) => {
+    app.post(`/${ruta}`, ruta === "noticias" ? requerirAdministrador : requerirSesion, (req, res) => {
         const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
         const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
 
@@ -1608,10 +1643,18 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         const meta = typeof req.body.meta === "string" ? req.body.meta.trim() : "";
         const accent = typeof req.body.accent === "string" ? req.body.accent.trim() : "";
 
+        const columnas = ruta === "comunidad"
+            ? "title, tag, description, meta, accent, owner_user_id"
+            : "title, tag, description, meta, accent";
+        const valores = ruta === "comunidad"
+            ? [title, tag, description, meta, accent, req.usuarioId]
+            : [title, tag, description, meta, accent];
+        const marcadores = valores.map(() => "?").join(", ");
+
         db.run(
-            `INSERT INTO ${tabla}(title, tag, description, meta, accent)
-             VALUES(?, ?, ?, ?, ?)`,
-            [title, tag, description, meta, accent],
+            `INSERT INTO ${tabla}(${columnas})
+             VALUES(${marcadores})`,
+            valores,
             function (err) {
                 if (err) {
                     return res.status(500).json({
@@ -1630,7 +1673,11 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         );
     });
 
-    app.put(`/${ruta}/:id`, (req, res) => {
+    const permisosEdicion = ruta === "noticias"
+        ? [requerirAdministrador]
+        : [requerirSesion, requerirPropietarioComunidad];
+
+    app.put(`/${ruta}/:id`, ...permisosEdicion, (req, res) => {
         const { id } = req.params;
         const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
         const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
@@ -1675,7 +1722,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         );
     });
 
-    app.delete(`/${ruta}/:id`, (req, res) => {
+    app.delete(`/${ruta}/:id`, ...permisosEdicion, (req, res) => {
         const { id } = req.params;
 
         db.run(`DELETE FROM ${tabla} WHERE id = ?`, [id], function (err) {

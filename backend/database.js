@@ -89,7 +89,8 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                 tag TEXT,
                                                 description TEXT NOT NULL,
                                                 meta TEXT,
-                                                accent TEXT
+                                                accent TEXT,
+                                                owner_user_id INTEGER
                                             )`,
                                             (communityTableError) => {
                                                 if (communityTableError) {
@@ -250,7 +251,28 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                                                                                                     });
                                                                                                                 }));
 
-                                                                                                                resolverInicializacion();
+                                                                                                                db.all("PRAGMA table_info(comunidad)", (communityColumnsError, columns) => {
+                                                                                                                    if (communityColumnsError) {
+                                                                                                                        rechazarInicializacion(communityColumnsError);
+                                                                                                                        return;
+                                                                                                                    }
+
+                                                                                                                    if (columns.some((column) => column.name === "owner_user_id")) {
+                                                                                                                        resolverInicializacion();
+                                                                                                                        return;
+                                                                                                                    }
+
+                                                                                                                    db.run(
+                                                                                                                        "ALTER TABLE comunidad ADD COLUMN owner_user_id INTEGER",
+                                                                                                                        (ownerColumnError) => {
+                                                                                                                            if (ownerColumnError) {
+                                                                                                                                rechazarInicializacion(ownerColumnError);
+                                                                                                                                return;
+                                                                                                                            }
+                                                                                                                            resolverInicializacion();
+                                                                                                                        }
+                                                                                                                    );
+                                                                                                                });
                                                                                                             } catch (passwordMigrationError) {
                                                                                                                 rechazarInicializacion(passwordMigrationError);
                                                                                                             }

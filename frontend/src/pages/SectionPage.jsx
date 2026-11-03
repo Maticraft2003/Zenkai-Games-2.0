@@ -6,6 +6,7 @@ import GameCard from "../components/GameCard";
 import ZenkaiNotice from "../components/ZenkaiNotice";
 import { useFavorites } from "../context/favoriteHooks";
 import { obtenerDescripcionJuego } from "../data/gameCatalog";
+import { crearHeadersAutenticacion } from "../utils/authHeaders";
 import "./Home.css";
 
 const juegos = [
@@ -194,6 +195,7 @@ const contentByType = {
 function SectionPage({ type = "juegos", title, subtitle }) {
   const navigate = useNavigate();
   const { usuario, login, logout } = useAuth();
+  const esAdministrador = usuario?.role === "admin" && Boolean(usuario?.token);
   const { favoritos, cargando: cargandoFavoritos, errorCarga: errorFavoritosCarga } = useFavorites();
   const [generoActivo, setGeneroActivo] = useState("Todos");
   const [juegosGuardados, setJuegosGuardados] = useState([]);
@@ -230,7 +232,9 @@ function SectionPage({ type = "juegos", title, subtitle }) {
 
     let ignore = false;
 
-    axios.get(`http://localhost:3001/perfil/${usuario.id}`)
+    axios.get(`http://localhost:3001/perfil/${usuario.id}`, {
+      headers: crearHeadersAutenticacion(usuario.token),
+    })
       .then((respuesta) => {
         if (!respuesta.data?.success || !respuesta.data.usuario) {
           throw new Error("La respuesta del servidor no contiene el perfil.");
@@ -252,7 +256,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
     return () => {
       ignore = true;
     };
-  }, [type, usuario?.id]);
+  }, [type, usuario?.id, usuario?.token]);
 
   useEffect(() => {
     if (type !== "rankings") return undefined;
@@ -351,7 +355,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
 
     try {
       const respuesta = await axios.get(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
-        params: { usuarioId: usuario?.id },
+        headers: crearHeadersAutenticacion(usuario?.token),
       });
       if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
         throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
@@ -394,9 +398,13 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       setErrorContenido("");
 
       if (publicacionEditandoId) {
-        await axios.put(`http://localhost:3001/${type}/${publicacionEditandoId}`, payload);
+        await axios.put(`http://localhost:3001/${type}/${publicacionEditandoId}`, payload, {
+          headers: crearHeadersAutenticacion(usuario?.token),
+        });
       } else {
-        await axios.post(`http://localhost:3001/${type}`, payload);
+        await axios.post(`http://localhost:3001/${type}`, payload, {
+          headers: crearHeadersAutenticacion(usuario?.token),
+        });
       }
 
       await cargarPublicaciones();
@@ -425,7 +433,9 @@ function SectionPage({ type = "juegos", title, subtitle }) {
     if (!confirmar) return;
 
     try {
-      await axios.delete(`http://localhost:3001/${type}/${id}`);
+      await axios.delete(`http://localhost:3001/${type}/${id}`, {
+        headers: crearHeadersAutenticacion(usuario?.token),
+      });
       await cargarPublicaciones();
     } catch (error) {
       console.error(`No se pudo eliminar de ${type}:`, error);
@@ -446,13 +456,14 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       setGuardandoComentario(true);
       setErrorComentarios("");
       await axios.post(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
-        usuarioId: usuario.id,
         contenido,
+      }, {
+        headers: crearHeadersAutenticacion(usuario.token),
       });
       setNuevoComentario("");
 
       const respuesta = await axios.get(`http://localhost:3001/comunidad/${publicacionId}/comentarios`, {
-        params: { usuarioId: usuario.id },
+        headers: crearHeadersAutenticacion(usuario.token),
       });
       if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
         throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
@@ -476,7 +487,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
   };
 
   const cambiarLikeComentario = async (comentario) => {
-    if (!usuario?.id || guardandoLikeComentarioId === comentario.id) return;
+    if (!usuario?.token || guardandoLikeComentarioId === comentario.id) return;
 
     try {
       setGuardandoLikeComentarioId(comentario.id);
@@ -484,14 +495,14 @@ function SectionPage({ type = "juegos", title, subtitle }) {
       const endpoint = `http://localhost:3001/comunidad/comentarios/${comentario.id}/like`;
 
       if (comentario.liked_by_user) {
-        await axios.delete(endpoint, { params: { usuarioId: usuario.id } });
+        await axios.delete(endpoint, { headers: crearHeadersAutenticacion(usuario.token) });
       } else {
-        await axios.post(endpoint, { usuarioId: usuario.id });
+        await axios.post(endpoint, {}, { headers: crearHeadersAutenticacion(usuario.token) });
       }
 
       const respuesta = await axios.get(
         `http://localhost:3001/comunidad/${comentario.publicacion_id}/comentarios`,
-        { params: { usuarioId: usuario.id } }
+        { headers: crearHeadersAutenticacion(usuario.token) }
       );
       if (!respuesta.data?.success || !Array.isArray(respuesta.data.comentarios)) {
         throw new Error("La respuesta del servidor no contiene una lista de comentarios.");
@@ -533,6 +544,8 @@ function SectionPage({ type = "juegos", title, subtitle }) {
         email: formularioPerfil.email.trim(),
         currentPassword: formularioPerfil.currentPassword,
         newPassword: formularioPerfil.newPassword,
+      }, {
+        headers: crearHeadersAutenticacion(usuario.token),
       });
 
       if (!respuesta.data?.success || !respuesta.data.usuario) {
@@ -695,7 +708,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
             <h2>{title}</h2>
             {subtitle ? <p className="genre-filter-status">{subtitle}</p> : null}
           </div>
-          {type === "noticias" || type === "comunidad" ? (
+          {(type === "noticias" && esAdministrador) || (type === "comunidad" && usuario?.token) ? (
             <button
               type="button"
               className="primary-button"
@@ -807,7 +820,8 @@ function SectionPage({ type = "juegos", title, subtitle }) {
           </p>
         ) : null}
 
-        {formularioContenidoAbierto && (type === "noticias" || type === "comunidad") ? (
+        {formularioContenidoAbierto
+          && ((type === "noticias" && esAdministrador) || (type === "comunidad" && usuario?.token)) ? (
           <form className="game-form section-content-form" onSubmit={guardarPublicacion}>
             <h3>{publicacionEditandoId ? "Editar contenido" : type === "noticias" ? "Nueva noticia" : "Nueva publicación"}</h3>
             <div className="form-grid">
@@ -904,22 +918,26 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                       <div className="community-comments-panel">
                         {errorComentarios ? <ZenkaiNotice>{errorComentarios}</ZenkaiNotice> : null}
 
-                        <form className="community-comment-form" onSubmit={(evento) => publicarComentario(evento, item.id)}>
-                          <label className="full-width">
-                            <span>Escribí un comentario</span>
-                            <textarea
-                              rows="3"
-                              maxLength={1000}
-                              value={nuevoComentario}
-                              onChange={(evento) => setNuevoComentario(evento.target.value)}
-                              placeholder="¿Qué opinás?"
-                              required
-                            />
-                          </label>
-                          <button type="submit" className="primary-button" disabled={guardandoComentario}>
-                            {guardandoComentario ? "Publicando..." : "Comentar"}
-                          </button>
-                        </form>
+                        {usuario?.token ? (
+                          <form className="community-comment-form" onSubmit={(evento) => publicarComentario(evento, item.id)}>
+                            <label className="full-width">
+                              <span>Escribí un comentario</span>
+                              <textarea
+                                rows="3"
+                                maxLength={1000}
+                                value={nuevoComentario}
+                                onChange={(evento) => setNuevoComentario(evento.target.value)}
+                                placeholder="¿Qué opinás?"
+                                required
+                              />
+                            </label>
+                            <button type="submit" className="primary-button" disabled={guardandoComentario}>
+                              {guardandoComentario ? "Publicando..." : "Comentar"}
+                            </button>
+                          </form>
+                        ) : (
+                          <p className="community-comments-empty">Iniciá sesión para dejar un comentario.</p>
+                        )}
 
                         {cargandoComentariosId === item.id ? (
                           <p className="community-comments-empty">Cargando comentarios...</p>
@@ -939,7 +957,8 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                                     type="button"
                                     className={`community-comment-action ${comentario.liked_by_user ? "active" : ""}`}
                                     aria-pressed={Boolean(comentario.liked_by_user)}
-                                    disabled={guardandoLikeComentarioId === comentario.id}
+                                    disabled={!usuario?.token || guardandoLikeComentarioId === comentario.id}
+                                    title={usuario?.token ? "Me gusta" : "Iniciá sesión para votar"}
                                     onClick={() => cambiarLikeComentario(comentario)}
                                   >
                                     {comentario.liked_by_user ? "♥" : "♡"} Me gusta ({comentario.likes_count})
@@ -962,7 +981,11 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                     ) : null}
                   </section>
                 ) : null}
-                {(type === "noticias" || type === "comunidad") && item.id ? (
+                {item.id && (
+                  (type === "noticias" && esAdministrador)
+                  || (type === "comunidad"
+                    && (esAdministrador || Number(item.owner_user_id) === Number(usuario?.id)))
+                ) ? (
                   <div className="crud-actions">
                     <button type="button" className="secondary-button" onClick={() => editarPublicacion(item)}>
                       Editar
