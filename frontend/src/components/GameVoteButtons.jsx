@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/useAuth";
 import { normalizarClaveJuego } from "../utils/gameKey";
 import ZenkaiNotice from "./ZenkaiNotice";
+import { crearHeadersAutenticacion } from "../utils/authHeaders";
 
 function GameVoteButtons({ juego, compact = false, onStatsChange }) {
   const { usuario } = useAuth();
@@ -16,18 +17,18 @@ function GameVoteButtons({ juego, compact = false, onStatsChange }) {
   const [cargaCompletadaKey, setCargaCompletadaKey] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  const claveCarga = `${gameKey}:${usuario?.id || ""}`;
-  const cargando = Boolean(usuario?.id && cargaCompletadaKey !== claveCarga);
+  const claveCarga = `${gameKey}:${usuario?.id || ""}:${usuario?.token || ""}`;
+  const cargando = Boolean(gameKey && cargaCompletadaKey !== claveCarga);
 
   useEffect(() => {
     let ignore = false;
 
-    if (!gameKey || !usuario?.id) {
+    if (!gameKey) {
       return undefined;
     }
 
     axios.get(`http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}`, {
-      params: { usuarioId: usuario.id },
+      headers: crearHeadersAutenticacion(usuario?.token),
     })
       .then((respuesta) => {
         if (!respuesta.data?.success || !respuesta.data.juego) {
@@ -58,10 +59,10 @@ function GameVoteButtons({ juego, compact = false, onStatsChange }) {
     return () => {
       ignore = true;
     };
-  }, [gameKey, usuario?.id, onStatsChange, claveCarga]);
+  }, [gameKey, usuario?.token, onStatsChange, claveCarga]);
 
   const cambiarVoto = async (tipo) => {
-    if (!usuario?.id || !gameKey || cargando || guardando) return;
+    if (!usuario?.token || !gameKey || cargando || guardando) return;
 
     const esLikeActivo = tipo === "like" && votos.liked_by_user;
     const esDislikeActivo = tipo === "dislike" && votos.disliked_by_user;
@@ -72,22 +73,21 @@ function GameVoteButtons({ juego, compact = false, onStatsChange }) {
       setGuardando(true);
       setError("");
       if (quitarVoto) {
-        await axios.delete(endpoint, { params: { usuarioId: usuario.id } });
+        await axios.delete(endpoint, { headers: crearHeadersAutenticacion(usuario.token) });
       } else {
         await axios.post(endpoint, {
-          usuarioId: usuario.id,
           juego: {
             nombre: juego.nombre,
             genero: juego.genero || "",
             imagen: juego.imagen?.startsWith("data:") ? "" : juego.imagen || "",
             descripcion: juego.descripcion || "",
           },
-        });
+        }, { headers: crearHeadersAutenticacion(usuario.token) });
       }
 
       const respuesta = await axios.get(
         `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}`,
-        { params: { usuarioId: usuario.id } }
+        { headers: crearHeadersAutenticacion(usuario.token) }
       );
       if (!respuesta.data?.success || !respuesta.data.juego) {
         throw new Error("No se pudo actualizar el conteo de votos.");
@@ -119,9 +119,9 @@ function GameVoteButtons({ juego, compact = false, onStatsChange }) {
         type="button"
         className={`game-page-like ${votos.liked_by_user ? "active" : ""}`}
         aria-pressed={votos.liked_by_user}
-        disabled={!usuario?.id || cargando || guardando}
+        disabled={!usuario?.token || cargando || guardando}
         onClick={() => cambiarVoto("like")}
-        title={usuario?.id ? "Me gusta" : "Iniciá sesión para votar"}
+        title={usuario?.token ? "Me gusta" : "Iniciá sesión para votar"}
       >
         {guardando ? "…" : "♥"} <span>Me gusta</span> ({votos.likes})
       </button>
@@ -129,9 +129,9 @@ function GameVoteButtons({ juego, compact = false, onStatsChange }) {
         type="button"
         className={`game-page-dislike ${votos.disliked_by_user ? "active" : ""}`}
         aria-pressed={votos.disliked_by_user}
-        disabled={!usuario?.id || cargando || guardando}
+        disabled={!usuario?.token || cargando || guardando}
         onClick={() => cambiarVoto("dislike")}
-        title={usuario?.id ? "No me gusta" : "Iniciá sesión para votar"}
+        title={usuario?.token ? "No me gusta" : "Iniciá sesión para votar"}
       >
         {guardando ? "…" : "👎"} <span>No me gusta</span> ({votos.dislikes})
       </button>

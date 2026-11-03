@@ -8,6 +8,8 @@ import catalogoJuegos, { buscarJuegoEnCatalogo, obtenerDescripcionJuego } from "
 import { useAuth } from "../context/useAuth";
 import { normalizarClaveJuego } from "../utils/gameKey";
 import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
+import { crearHeadersAutenticacion } from "../utils/authHeaders";
+import { obtenerIdVisitanteAnonimo } from "../utils/anonymousVisitor";
 import "./Home.css";
 
 function GameDetailPage() {
@@ -24,7 +26,7 @@ function GameDetailPage() {
   const [estadisticas, setEstadisticas] = useState({ visitas: 0, likes: 0, dislikes: 0 });
   const [juegoCargadoKey, setJuegoCargadoKey] = useState(null);
   const [error, setError] = useState("");
-  const solicitudVisita = useRef({ gameKey: null, promise: null });
+  const solicitudVisita = useRef({ requestKey: null, promise: null });
   const puntuacionJuego = obtenerPuntuacionJuego(estadisticas);
   const descripcionJuego = juego?.descripcion
     || obtenerDescripcionJuego(juego?.nombre)
@@ -32,16 +34,18 @@ function GameDetailPage() {
 
   useEffect(() => {
     let ignore = false;
+    const requestKey = `${gameKey}:${usuario?.id ? `usuario:${usuario.id}` : "anonimo"}`;
 
-    if (solicitudVisita.current.gameKey !== gameKey) {
+    if (solicitudVisita.current.requestKey !== requestKey) {
       solicitudVisita.current = {
-        gameKey,
+        requestKey,
         promise: (async () => {
           let datosJuego = juegoInicial;
 
           if (!datosJuego) {
             const respuestaEstadisticas = await axios.get(
-              `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}`
+              `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}`,
+              { headers: crearHeadersAutenticacion(usuario?.token) }
             );
             if (!respuestaEstadisticas.data?.success || !respuestaEstadisticas.data.juego) {
               throw new Error("No se pudieron obtener los datos del juego.");
@@ -62,7 +66,11 @@ function GameDetailPage() {
 
           const respuestaVisita = await axios.post(
             `http://localhost:3001/engagement/juegos/${encodeURIComponent(gameKey)}/visita`,
-            { juego: datosJuego, usuarioId: usuario?.id }
+            {
+              juego: datosJuego,
+              sessionId: obtenerIdVisitanteAnonimo(),
+            },
+            { headers: crearHeadersAutenticacion(usuario?.token) }
           );
           if (!respuestaVisita.data?.success || !respuestaVisita.data.juego) {
             throw new Error("No se pudo registrar la visita al juego.");
@@ -101,7 +109,7 @@ function GameDetailPage() {
     return () => {
       ignore = true;
     };
-  }, [gameKey, juegoInicial, usuario?.id]);
+  }, [gameKey, juegoInicial, usuario?.id, usuario?.token]);
 
   const actualizarEstadisticas = useCallback((datosJuego) => {
     setEstadisticas({

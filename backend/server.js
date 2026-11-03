@@ -67,6 +67,40 @@ const requerirSesion = (req, res, next) => {
     );
 };
 
+const permitirSesionOpcional = (req, res, next) => {
+    const authorization = req.get("authorization") || "";
+    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+
+    if (!token) {
+        req.usuarioId = null;
+        return next();
+    }
+
+    db.get(
+        "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?",
+        [hashToken(token)],
+        (sessionError, session) => {
+            if (sessionError) {
+                return res.status(500).json({
+                    success: false,
+                    mensaje: "No se pudo verificar tu sesión.",
+                });
+            }
+
+            if (!session || Date.parse(session.expires_at) <= Date.now()) {
+                return res.status(401).json({
+                    success: false,
+                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
+                    code: "SESSION_EXPIRED",
+                });
+            }
+
+            req.usuarioId = session.user_id;
+            return next();
+        }
+    );
+};
+
 const requerirAdministrador = (req, res, next) => {
     const authorization = req.get("authorization") || "";
     const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
@@ -633,9 +667,9 @@ app.get("/engagement/juegos/rankings", (req, res) => {
     });
 });
 
-app.get("/engagement/juegos/:gameKey", (req, res) => {
+app.get("/engagement/juegos/:gameKey", permitirSesionOpcional, (req, res) => {
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
-    const usuarioId = Number(req.query.usuarioId);
+    const usuarioId = req.usuarioId || 0;
 
     if (!gameKey) {
         return res.status(400).json({ success: false, mensaje: "El juego no es válido." });
@@ -698,18 +732,24 @@ app.get("/engagement/juegos/:gameKey", (req, res) => {
     );
 });
 
-app.post("/engagement/juegos/:gameKey/visita", (req, res) => {
+app.post("/engagement/juegos/:gameKey/visita", permitirSesionOpcional, (req, res) => {
     const nombre = typeof req.body?.juego?.nombre === "string" ? req.body.juego.nombre.trim() : "";
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
     const juegoRecibido = req.body?.juego || {};
-    const usuarioId = Number(req.body?.usuarioId);
-    const usuarioIdValido = Number.isInteger(usuarioId) && usuarioId > 0 ? usuarioId : 0;
+    const usuarioIdValido = req.usuarioId || 0;
     const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId.trim() : "";
     const visitanteKey = usuarioIdValido
         ? `usuario:${usuarioIdValido}`
         : /^[A-Za-z0-9._:-]{8,128}$/.test(sessionId)
             ? `sesion:${sessionId}`
             : null;
+
+    if (!visitanteKey) {
+        return res.status(400).json({
+            success: false,
+            mensaje: "No se pudo identificar esta visita. Actualizá la página e intentá nuevamente.",
+        });
+    }
 
     if (!nombre || !gameKey || normalizarClaveJuego(nombre) !== gameKey) {
         return res.status(400).json({ success: false, mensaje: "No se pudo identificar el juego." });
@@ -851,7 +891,7 @@ app.post("/engagement/juegos/:gameKey/visita", (req, res) => {
 
 const actualizarVotoJuego = (req, res, tipoVoto, quitarVoto = false) => {
     const gameKey = normalizarClaveJuego(req.params.gameKey || "");
-    const usuarioId = Number(quitarVoto ? req.query.usuarioId : req.body?.usuarioId);
+    const usuarioId = req.usuarioId;
     const tablaVoto = tipoVoto === "like" ? "juegos_likes" : "juegos_dislikes";
     const tablaOpuesta = tipoVoto === "like" ? "juegos_dislikes" : "juegos_likes";
     const etiquetaVoto = tipoVoto === "like" ? "me gusta" : "no me gusta";
@@ -970,16 +1010,16 @@ const actualizarVotoJuego = (req, res, tipoVoto, quitarVoto = false) => {
     );
 };
 
-app.post("/engagement/juegos/:gameKey/like", (req, res) => {
+app.post("/engagement/juegos/:gameKey/like", requerirSesion, (req, res) => {
     actualizarVotoJuego(req, res, "like");
 });
-app.delete("/engagement/juegos/:gameKey/like", (req, res) => {
+app.delete("/engagement/juegos/:gameKey/like", requerirSesion, (req, res) => {
     actualizarVotoJuego(req, res, "like", true);
 });
-app.post("/engagement/juegos/:gameKey/dislike", (req, res) => {
+app.post("/engagement/juegos/:gameKey/dislike", requerirSesion, (req, res) => {
     actualizarVotoJuego(req, res, "dislike");
 });
-app.delete("/engagement/juegos/:gameKey/dislike", (req, res) => {
+app.delete("/engagement/juegos/:gameKey/dislike", requerirSesion, (req, res) => {
     actualizarVotoJuego(req, res, "dislike", true);
 });
 
@@ -1262,8 +1302,11 @@ app.delete("/juegos/:id", requerirAdministrador, (req, res) => {
     });
 });
 
-app.get("/usuarios/:usuarioId/favoritos", (req, res) => {
-    const { usuarioId } = req.params;
+app.get("/usuarios/:usuarioId/favoritos", requerirSesion, (req, res) => {
+    const usuarioId = req.usuarioId;
+    if (Number(req.params.usuarioId) !== usuarioId) {
+        return res.status(403).json({ success: false, mensaje: "No podés acceder a favoritos de otra cuenta." });
+    }
 
     db.all(
         `SELECT juego_key, nombre, genero, imagen, descripcion
@@ -1284,8 +1327,11 @@ app.get("/usuarios/:usuarioId/favoritos", (req, res) => {
     );
 });
 
-app.post("/usuarios/:usuarioId/favoritos", (req, res) => {
-    const { usuarioId } = req.params;
+app.post("/usuarios/:usuarioId/favoritos", requerirSesion, (req, res) => {
+    const usuarioId = req.usuarioId;
+    if (Number(req.params.usuarioId) !== usuarioId) {
+        return res.status(403).json({ success: false, mensaje: "No podés modificar favoritos de otra cuenta." });
+    }
     const juego = req.body?.juego;
     const nombre = typeof juego?.nombre === "string" ? juego.nombre.trim() : "";
     const genero = typeof juego?.genero === "string" ? juego.genero.trim() : "";
@@ -1341,8 +1387,12 @@ app.post("/usuarios/:usuarioId/favoritos", (req, res) => {
     });
 });
 
-app.delete("/usuarios/:usuarioId/favoritos/:juegoKey", (req, res) => {
-    const { usuarioId, juegoKey } = req.params;
+app.delete("/usuarios/:usuarioId/favoritos/:juegoKey", requerirSesion, (req, res) => {
+    const { juegoKey } = req.params;
+    const usuarioId = req.usuarioId;
+    if (Number(req.params.usuarioId) !== usuarioId) {
+        return res.status(403).json({ success: false, mensaje: "No podés modificar favoritos de otra cuenta." });
+    }
 
     db.run(
         "DELETE FROM favoritos WHERE usuario_id = ? AND juego_key = ?",

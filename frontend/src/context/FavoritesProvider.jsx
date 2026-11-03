@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FavoritesContext } from "./favoriteHooks";
 import { useAuth } from "./useAuth";
 import { normalizarClaveJuego } from "../utils/gameKey";
+import { crearHeadersAutenticacion } from "../utils/authHeaders";
 
 function FavoritesProvider({ children }) {
   const { usuario } = useAuth();
@@ -12,10 +13,13 @@ function FavoritesProvider({ children }) {
 
   useEffect(() => {
     if (!usuario?.id) return undefined;
+    if (!usuario?.token) return undefined;
 
     let ignore = false;
 
-    axios.get(`http://localhost:3001/usuarios/${usuario.id}/favoritos`)
+    axios.get(`http://localhost:3001/usuarios/${usuario.id}/favoritos`, {
+      headers: crearHeadersAutenticacion(usuario.token),
+    })
       .then((respuesta) => {
         if (!respuesta.data?.success || !Array.isArray(respuesta.data.favoritos)) {
           throw new Error("La respuesta del servidor no contiene una lista de favoritos.");
@@ -41,28 +45,33 @@ function FavoritesProvider({ children }) {
     return () => {
       ignore = true;
     };
-  }, [usuario?.id]);
+  }, [usuario?.id, usuario?.token]);
 
   const favoritos = useMemo(
     () => favoritosPorUsuario.usuarioId === usuario?.id ? favoritosPorUsuario.items : [],
     [favoritosPorUsuario, usuario?.id]
   );
-  const cargando = Boolean(usuario?.id && usuarioCargadoId !== usuario.id);
+  const cargando = Boolean(usuario?.id && usuario?.token && usuarioCargadoId !== usuario.id);
+  const errorCargaVisible = usuario?.id && !usuario?.token
+    ? "Tu sesión no está disponible. Iniciá sesión nuevamente para cargar favoritos."
+    : errorCarga;
   const clavesFavoritos = useMemo(
     () => new Set(favoritos.map((juego) => juego.juego_key)),
     [favoritos]
   );
 
   const toggleFavorito = async (juego) => {
-    if (!usuario?.id) throw new Error("Iniciá sesión para guardar favoritos.");
+    if (!usuario?.id || !usuario?.token) throw new Error("Iniciá sesión para guardar favoritos.");
     if (!juego?.nombre?.trim()) throw new Error("El juego no tiene un nombre válido.");
 
     const juegoKey = normalizarClaveJuego(juego.nombre);
     const esFavorito = clavesFavoritos.has(juegoKey);
+    const config = { headers: crearHeadersAutenticacion(usuario.token) };
 
     if (esFavorito) {
       const respuesta = await axios.delete(
-        `http://localhost:3001/usuarios/${usuario.id}/favoritos/${encodeURIComponent(juegoKey)}`
+        `http://localhost:3001/usuarios/${usuario.id}/favoritos/${encodeURIComponent(juegoKey)}`,
+        config
       );
 
       if (!respuesta.data?.success) throw new Error("No se pudo quitar el juego de favoritos.");
@@ -85,7 +94,8 @@ function FavoritesProvider({ children }) {
           imagen: juego.imagen || "",
           descripcion: juego.descripcion || "",
         },
-      }
+      },
+      config
     );
 
     if (!respuesta.data?.success) throw new Error("No se pudo agregar el juego a favoritos.");
@@ -106,7 +116,7 @@ function FavoritesProvider({ children }) {
   };
 
   return (
-    <FavoritesContext.Provider value={{ favoritos, cargando, errorCarga, clavesFavoritos, toggleFavorito }}>
+    <FavoritesContext.Provider value={{ favoritos, cargando, errorCarga: errorCargaVisible, clavesFavoritos, toggleFavorito }}>
       {children}
     </FavoritesContext.Provider>
   );
