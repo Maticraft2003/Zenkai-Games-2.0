@@ -219,14 +219,6 @@ const validarDatosJuego = (datos) => {
     return null;
 };
 
-const validarTituloJuego = (nombre, nombreActual = "") => {
-    const clave = normalizarClaveJuego(nombre);
-    if (TITULOS_JUEGOS_PERMITIDOS.has(clave) || (nombreActual && clave === normalizarClaveJuego(nombreActual))) {
-        return null;
-    }
-    return "El nombre debe corresponder a un juego del catálogo permitido.";
-};
-
 const esNombreDuplicado = (error) => error?.message?.includes("juegos.nombre_key");
 
 const CONSULTA_JUEGOS_POPULARIDAD = `
@@ -1144,11 +1136,6 @@ app.post("/juegos", requerirSesion, (req, res) => {
             return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
         }
 
-        const titleError = validarTituloJuego(nombre);
-        if (titleError) {
-            return res.status(400).json({ success: false, mensaje: titleError });
-        }
-
         db.run(
             `INSERT INTO juegos(
                 nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion,
@@ -1216,7 +1203,7 @@ app.put("/juegos/:id", requerirAdministrador, (req, res) => {
     const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
 
-    db.get("SELECT nombre FROM juegos WHERE id = ?", [id], (gameError, juegoActual) => {
+    db.get("SELECT 1 FROM juegos WHERE id = ?", [id], (gameError) => {
         if (gameError) {
             return res.status(500).json({ success: false, mensaje: "No se pudo validar el juego." });
         }
@@ -1230,11 +1217,6 @@ app.put("/juegos/:id", requerirAdministrador, (req, res) => {
                 }
                 if (duplicate) {
                     return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
-                }
-
-                const titleError = juegoActual ? validarTituloJuego(nombre, juegoActual.nombre) : null;
-                if (titleError) {
-                    return res.status(400).json({ success: false, mensaje: titleError });
                 }
 
                 db.run(

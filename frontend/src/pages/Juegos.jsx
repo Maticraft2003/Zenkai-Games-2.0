@@ -138,16 +138,15 @@ function Juegos() {
     }
   }, [location.pathname, location.state, navigate]);
 
-  const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero).filter(Boolean))];
-  const juegosFiltrados = juegos.filter((juego) => (
+  const juegosDeLaLista = juegos.filter(
+    (juego) => juego.genero?.trim().toLocaleLowerCase() !== "terror"
+  );
+  const generos = ["Todos", ...new Set(juegosDeLaLista.map((juego) => juego.genero).filter(Boolean))];
+  const juegosFiltrados = juegosDeLaLista.filter((juego) => (
     (generoActivo === "Todos" || juego.genero === generoActivo)
       && coincideBusquedaJuego(juego, busquedaJuegos)
   ));
   const nombreJuegoNormalizado = normalizarClaveJuego(formulario.nombre);
-  const nombreJuegoValido = Boolean(buscarJuegoEnCatalogo(formulario.nombre))
-    || (Boolean(editandoId) && juegos.some(
-      (juego) => juego.id === editandoId && normalizarClaveJuego(juego.nombre) === nombreJuegoNormalizado
-    ));
   const juegoDuplicado = juegos.some(
     (juego) => juego.id !== editandoId && sonElMismoJuego(juego.nombre, formulario.nombre)
   );
@@ -305,11 +304,6 @@ function Juegos() {
 
     if (!nombre || !genero || !descripcion || (!formulario.imagen.trim() && !imagenPegada)) {
       setError("Completá el nombre, el género, la imagen y la descripción.");
-      return;
-    }
-
-    if (!nombreJuegoValido) {
-      setError("Solo se pueden agregar juegos reales reconocidos del catálogo. Revisá el nombre; no se permiten palabras inventadas.");
       return;
     }
 
@@ -477,7 +471,7 @@ function Juegos() {
             ) : null}
           </div>
           <p className="genre-filter-status">
-            Por ahora podés proponer juegos desde acá. Solo se aceptan títulos reconocidos y que todavía no estén en el catálogo.
+            Agregá juegos nuevos de cualquier género. Los títulos conocidos completan sus datos automáticamente; para otros, completá la información manualmente.
           </p>
           {error && !formularioAbierto ? <ZenkaiNotice>{error}</ZenkaiNotice> : null}
 
@@ -581,14 +575,9 @@ function Juegos() {
                       ))}
                     </datalist>
                     <small className="catalog-hint">
-                      Elegí un título real reconocido del catálogo. No se aceptan nombres inventados.
+                      Podés elegir un título sugerido o escribir uno nuevo. Si es nuevo, completá también el género, la imagen y la descripción.
                     </small>
-                    {formulario.nombre.trim() && !nombreJuegoValido ? (
-                      <ZenkaiNotice className="game-title-validation-notice" title="JUEGO NO RECONOCIDO">
-                        Ese nombre no corresponde a un juego del catálogo y no se puede agregar.
-                      </ZenkaiNotice>
-                    ) : null}
-                    {formulario.nombre.trim() && nombreJuegoValido && juegoDuplicado ? (
+                    {formulario.nombre.trim() && juegoDuplicado ? (
                       <ZenkaiNotice className="game-title-validation-notice" title="JUEGO YA AGREGADO">
                         Este juego ya está en el catálogo y no se puede repetir.
                       </ZenkaiNotice>
@@ -646,7 +635,7 @@ function Juegos() {
                   <button
                     type="submit"
                     className="primary-button"
-                    disabled={guardando || !usuario?.token || !nombreJuegoValido || juegoDuplicado}
+                    disabled={guardando || !usuario?.token || !nombreJuegoNormalizado || juegoDuplicado}
                   >
                     {guardando ? "Guardando..." : editandoId || catalogoEnEdicionKey ? "Actualizar juego" : "Guardar juego"}
                   </button>
