@@ -1,14 +1,14 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
-import GameCard from "../components/GameCard";
-import ZenkaiNotice from "../components/ZenkaiNotice";
-import { useAuth } from "../context/useAuth";
+import GameCard from "../../components/GameCard";
+import ZenkaiNotice from "../../components/ZenkaiNotice";
+import { useAuth } from "../../context/useAuth";
 import { useNavigate } from "react-router";
-import minecraftImage from "../assets/hero.png";
-import catalogoJuegos, { obtenerDescripcionJuego } from "../data/gameCatalog";
-import { coincideBusquedaJuego, normalizarClaveJuego } from "../utils/gameKey";
-import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
-import { diasRestantesComoNuevo } from "../utils/gameFreshness";
+import minecraftImage from "../../assets/hero.png";
+import catalogoJuegos, { obtenerDescripcionJuego } from "../../data/gameCatalog";
+import { coincideBusquedaJuego, normalizarClaveJuego } from "../../utils/gameKey";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../../utils/gameRating";
+import { diasRestantesComoNuevo } from "../../utils/gameFreshness";
 import "./Home.css";
 
 function Home() {

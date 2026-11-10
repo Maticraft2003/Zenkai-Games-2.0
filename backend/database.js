@@ -447,8 +447,11 @@ function inicializarTablasAuth(database, callback) {
             next
         ),
         (next) => database.run(
-            `UPDATE user_roles SET role = 'admin'
-             WHERE user_id = (SELECT id FROM usuarios WHERE email = 'admin@gmail.com')`,
+            `UPDATE user_roles SET role = CASE
+                WHEN user_id = (SELECT id FROM usuarios WHERE email = ?) THEN 'admin'
+                ELSE 'usuario'
+            END`,
+            ["TU_CORREO@EJEMPLO.COM"],
             next
         ),
     ];

@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router";
-import { useAuth } from "../context/useAuth";
-import catalogoJuegos, { buscarJuegoEnCatalogo } from "../data/gameCatalog";
-import GameCard from "../components/GameCard";
-import ZenkaiNotice from "../components/ZenkaiNotice";
-import FavoriteButton from "../components/FavoriteButton";
-import { coincideBusquedaJuego, normalizarClaveJuego } from "../utils/gameKey";
-import { diasRestantesComoNuevo } from "../utils/gameFreshness";
-import { obtenerPuntuacionJuego } from "../utils/gameRating";
-import "./Home.css";
+import { useAuth } from "../../context/useAuth";
+import catalogoJuegos, { buscarJuegoEnCatalogo } from "../../data/gameCatalog";
+import GameCard from "../../components/GameCard";
+import ZenkaiNotice from "../../components/ZenkaiNotice";
+import FavoriteButton from "../../components/FavoriteButton";
+import { coincideBusquedaJuego, normalizarClaveJuego } from "../../utils/gameKey";
+import { diasRestantesComoNuevo } from "../../utils/gameFreshness";
+import { obtenerPuntuacionJuego } from "../../utils/gameRating";
+import "../Home/Home.css";
 
 const estadoInicial = {
   nombre: "",
@@ -48,8 +48,7 @@ function Juegos() {
   const navigate = useNavigate();
   const location = useLocation();
   const { usuario, logout } = useAuth();
-  const esCuentaAdministradora = usuario?.role === "admin"
-    || usuario?.email?.trim().toLowerCase() === "admin@gmail.com";
+  const esCuentaAdministradora = usuario?.role === "admin";
   const esAdministrador = esCuentaAdministradora && Boolean(usuario?.token);
   const puedeAgregarJuegos = Boolean(usuario);
 

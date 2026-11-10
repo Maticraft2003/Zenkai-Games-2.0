@@ -1,16 +1,16 @@
 import axios from "axios";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import FavoriteButton from "../components/FavoriteButton";
-import GameVoteButtons from "../components/GameVoteButtons";
-import ZenkaiNotice from "../components/ZenkaiNotice";
-import catalogoJuegos, { buscarJuegoEnCatalogo, obtenerDescripcionJuego } from "../data/gameCatalog";
-import { useAuth } from "../context/useAuth";
-import { normalizarClaveJuego } from "../utils/gameKey";
-import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
-import { crearHeadersAutenticacion } from "../utils/authHeaders";
-import { obtenerIdVisitanteAnonimo } from "../utils/anonymousVisitor";
-import "./Home.css";
+import FavoriteButton from "../../components/FavoriteButton";
+import GameVoteButtons from "../../components/GameVoteButtons";
+import ZenkaiNotice from "../../components/ZenkaiNotice";
+import catalogoJuegos, { buscarJuegoEnCatalogo, obtenerDescripcionJuego } from "../../data/gameCatalog";
+import { useAuth } from "../../context/useAuth";
+import { normalizarClaveJuego } from "../../utils/gameKey";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../../utils/gameRating";
+import { crearHeadersAutenticacion } from "../../utils/authHeaders";
+import { obtenerIdVisitanteAnonimo } from "../../utils/anonymousVisitor";
+import "../Home/Home.css";
 
 function GameDetailPage() {
   const { gameKey = "" } = useParams();

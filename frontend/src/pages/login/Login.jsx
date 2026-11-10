@@ -1,13 +1,13 @@
-import { useAuth } from "../context/useAuth";
+import { useAuth } from "../../context/useAuth";
 import axios from "axios";
 import { useNavigate } from "react-router";
 import { useState } from "react";
+import { useForm } from "../../hooks/useForm";
 import "./Login.css";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 
 function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { values, handleChange } = useForm({ email: "", password: "" });
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [error, setError] = useState("");
   const [iniciandoSesion, setIniciandoSesion] = useState(false);
@@ -24,8 +24,8 @@ function Login() {
       const respuesta = await axios.post(
         "http://localhost:3001/login",
         {
-          email: email.trim(),
-          password
+          email: values.email.trim(),
+          password: values.password
         }
       );
 
@@ -66,9 +66,10 @@ function Login() {
             <span>Correo electrónico</span>
             <input
               type="email"
+              name="email"
               placeholder="tu@correo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={values.email}
+              onChange={handleChange}
               autoComplete="email"
               required
             />
@@ -79,9 +80,10 @@ function Login() {
             <div className="auth-password-control">
               <input
                 type={mostrarPassword ? "text" : "password"}
+                name="password"
                 placeholder="Tu contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={values.password}
+                onChange={handleChange}
                 autoComplete="current-password"
                 required
               />

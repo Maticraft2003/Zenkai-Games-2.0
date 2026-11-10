@@ -1,13 +1,13 @@
 import axios from "axios";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { useAuth } from "../context/useAuth";
-import GameCard from "../components/GameCard";
-import ZenkaiNotice from "../components/ZenkaiNotice";
-import { useFavorites } from "../context/favoriteHooks";
-import { obtenerDescripcionJuego } from "../data/gameCatalog";
-import { crearHeadersAutenticacion } from "../utils/authHeaders";
-import "./Home.css";
+import { useAuth } from "../../context/useAuth";
+import GameCard from "../../components/GameCard";
+import ZenkaiNotice from "../../components/ZenkaiNotice";
+import { useFavorites } from "../../context/favoriteHooks";
+import { obtenerDescripcionJuego } from "../../data/gameCatalog";
+import { crearHeadersAutenticacion } from "../../utils/authHeaders";
+import "../Home/Home.css";
 
 const juegos = [
   {
