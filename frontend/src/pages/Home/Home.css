@@ -1630,6 +1630,52 @@
   line-height: 1.4;
 }
 
+.game-rating {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.game-rating.compact {
+  margin: 10px 0 8px;
+}
+
+.game-rating-stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.game-rating-stars button {
+  min-width: 32px;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: #a7a7a7;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.game-rating-stars button.active,
+.game-rating-stars button:hover:not(:disabled) {
+  color: #f5c542;
+}
+
+.game-rating-stars button:disabled {
+  cursor: default;
+}
+
+.game-rating-summary,
+.game-rating-login-hint {
+  color: #d1d5db;
+  font-size: 13px;
+}
+
+.game-rating-error {
+  flex-basis: 100%;
+}
+
 .game-detail-info h1 {
   margin: 8px 0 14px;
   color: #fff;

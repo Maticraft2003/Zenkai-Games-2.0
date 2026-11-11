@@ -708,7 +708,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
             <h2>{title}</h2>
             {subtitle ? <p className="genre-filter-status">{subtitle}</p> : null}
           </div>
-          {(type === "noticias" && esAdministrador) || (type === "comunidad" && usuario?.token) ? (
+          {(type === "noticias" || type === "comunidad") && esAdministrador ? (
             <button
               type="button"
               className="primary-button"
@@ -821,7 +821,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
         ) : null}
 
         {formularioContenidoAbierto
-          && ((type === "noticias" && esAdministrador) || (type === "comunidad" && usuario?.token)) ? (
+          && (type === "noticias" || type === "comunidad") && esAdministrador ? (
           <form className="game-form section-content-form" onSubmit={guardarPublicacion}>
             <h3>{publicacionEditandoId ? "Editar contenido" : type === "noticias" ? "Nueva noticia" : "Nueva publicación"}</h3>
             <div className="form-grid">
@@ -918,7 +918,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                       <div className="community-comments-panel">
                         {errorComentarios ? <ZenkaiNotice>{errorComentarios}</ZenkaiNotice> : null}
 
-                        {usuario?.token ? (
+                        {esAdministrador ? (
                           <form className="community-comment-form" onSubmit={(evento) => publicarComentario(evento, item.id)}>
                             <label className="full-width">
                               <span>Escribí un comentario</span>
@@ -935,9 +935,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                               {guardandoComentario ? "Publicando..." : "Comentar"}
                             </button>
                           </form>
-                        ) : (
-                          <p className="community-comments-empty">Iniciá sesión para dejar un comentario.</p>
-                        )}
+                        ) : null}
 
                         {cargandoComentariosId === item.id ? (
                           <p className="community-comments-empty">Cargando comentarios...</p>
@@ -953,16 +951,18 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                                 </div>
                                 <p>{comentario.contenido}</p>
                                 <div className="community-comment-actions">
-                                  <button
-                                    type="button"
-                                    className={`community-comment-action ${comentario.liked_by_user ? "active" : ""}`}
-                                    aria-pressed={Boolean(comentario.liked_by_user)}
-                                    disabled={!usuario?.token || guardandoLikeComentarioId === comentario.id}
-                                    title={usuario?.token ? "Me gusta" : "Iniciá sesión para votar"}
-                                    onClick={() => cambiarLikeComentario(comentario)}
-                                  >
-                                    {comentario.liked_by_user ? "♥" : "♡"} Me gusta ({comentario.likes_count})
-                                  </button>
+                                  {esAdministrador ? (
+                                    <button
+                                      type="button"
+                                      className={`community-comment-action ${comentario.liked_by_user ? "active" : ""}`}
+                                      aria-pressed={Boolean(comentario.liked_by_user)}
+                                      disabled={guardandoLikeComentarioId === comentario.id}
+                                      title="Me gusta"
+                                      onClick={() => cambiarLikeComentario(comentario)}
+                                    >
+                                      {comentario.liked_by_user ? "♥" : "♡"} Me gusta ({comentario.likes_count})
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="community-comment-action"
@@ -981,11 +981,7 @@ function SectionPage({ type = "juegos", title, subtitle }) {
                     ) : null}
                   </section>
                 ) : null}
-                {item.id && (
-                  (type === "noticias" && esAdministrador)
-                  || (type === "comunidad"
-                    && (esAdministrador || Number(item.owner_user_id) === Number(usuario?.id)))
-                ) ? (
+                {item.id && esAdministrador && (type === "noticias" || type === "comunidad") ? (
                   <div className="crud-actions">
                     <button type="button" className="secondary-button" onClick={() => editarPublicacion(item)}>
                       Editar

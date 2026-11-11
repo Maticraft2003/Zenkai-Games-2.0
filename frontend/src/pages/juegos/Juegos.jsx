@@ -8,7 +8,7 @@ import ZenkaiNotice from "../../components/ZenkaiNotice";
 import FavoriteButton from "../../components/FavoriteButton";
 import { coincideBusquedaJuego, normalizarClaveJuego } from "../../utils/gameKey";
 import { diasRestantesComoNuevo } from "../../utils/gameFreshness";
-import { obtenerPuntuacionJuego } from "../../utils/gameRating";
+import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../../utils/gameRating";
 import "../Home/Home.css";
 
 const estadoInicial = {
@@ -16,12 +16,28 @@ const estadoInicial = {
   genero: "",
   imagen: "",
   descripcion: "",
+  jugadores: "",
+  plataformas: "",
+  rawgId: "",
 };
 
 const TAMANO_MAXIMO_IMAGEN = 20 * 1024 * 1024;
 const MAXIMO_CARACTERES_IMAGEN = 28 * 1024 * 1024;
 const TIPOS_IMAGEN_PERMITIDOS = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
-const obtenerPuntuacionVisible = (juego) => obtenerPuntuacionJuego(juego) ?? 0;
+const obtenerPuntuacionVisible = (juego) => obtenerPuntuacionJuego(juego);
+const leerPlataformas = (valor) => {
+  if (Array.isArray(valor)) return valor;
+  if (typeof valor !== "string" || !valor.trim()) return [];
+
+  try {
+    const plataformas = JSON.parse(valor);
+    if (Array.isArray(plataformas)) return plataformas;
+  } catch {
+    return valor.split(",").map((plataforma) => plataforma.trim()).filter(Boolean);
+  }
+
+  return [];
+};
 const sonElMismoJuego = (nombreA, nombreB) => {
   const claveA = normalizarClaveJuego(nombreA);
   const claveB = normalizarClaveJuego(nombreB);
@@ -50,7 +66,7 @@ function Juegos() {
   const { usuario, logout } = useAuth();
   const esCuentaAdministradora = usuario?.role === "admin";
   const esAdministrador = esCuentaAdministradora && Boolean(usuario?.token);
-  const puedeAgregarJuegos = Boolean(usuario);
+  const puedeAgregarJuegos = esAdministrador;
 
   const [juegos, setJuegos] = useState([]);
   const [formulario, setFormulario] = useState(estadoInicial);
@@ -65,6 +81,9 @@ function Juegos() {
   const [generoCatalogoActivo, setGeneroCatalogoActivo] = useState("Todos");
   const [busquedaJuegos, setBusquedaJuegos] = useState("");
   const [juegosCatalogoOcultos, setJuegosCatalogoOcultos] = useState([]);
+  const [resultadosRAWG, setResultadosRAWG] = useState([]);
+  const [buscandoRAWG, setBuscandoRAWG] = useState(false);
+  const [juegoPendienteEliminar, setJuegoPendienteEliminar] = useState(null);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -209,31 +228,51 @@ function Juegos() {
     const { name, value } = evento.target;
     if (name === "nombre") setError("");
     if (name === "imagen") setImagenPegada(null);
-    if (name === "nombre" && buscarJuegoEnCatalogo(value)) setImagenPegada(null);
 
     setFormulario((actual) => {
       if (name !== "nombre") return { ...actual, [name]: value };
-
-      const juegoEncontrado = buscarJuegoEnCatalogo(value);
-      if (!juegoEncontrado) {
-        const nombreActualEstaEnCatalogo = buscarJuegoEnCatalogo(actual.nombre);
-        return {
-          ...actual,
-          nombre: value,
-          ...(nombreActualEstaEnCatalogo
-            ? { genero: "", imagen: "", descripcion: "" }
-            : {}),
-        };
-      }
-
-      return {
-        ...actual,
-        nombre: value,
-        genero: juegoEncontrado.genero,
-        imagen: juegoEncontrado.imagen,
-        descripcion: juegoEncontrado.descripcion,
-      };
+      return { ...actual, nombre: value, rawgId: "" };
     });
+  };
+
+  const buscarJuegosExternos = async () => {
+    const termino = formulario.nombre.trim();
+    if (termino.length < 2) {
+      setError("Escribí al menos dos caracteres para buscar el juego en internet.");
+      return;
+    }
+
+    try {
+      setBuscandoRAWG(true);
+      setError("");
+      const respuesta = await axios.get(
+        "http://localhost:3001/catalogo-juegos/buscar",
+        { ...headersAutenticacion(), params: { q: termino } }
+      );
+      setResultadosRAWG(respuesta.data?.juegos || []);
+      if (!respuesta.data?.juegos?.length) {
+        setError("RAWG no encontró coincidencias. Revisá el nombre e intentá nuevamente.");
+      }
+    } catch (errorBusqueda) {
+      setResultadosRAWG([]);
+      setError(errorBusqueda.response?.data?.mensaje || "No se pudo buscar el juego en internet.");
+    } finally {
+      setBuscandoRAWG(false);
+    }
+  };
+
+  const seleccionarJuegoExterno = (juego) => {
+    setImagenPegada(null);
+    setFormulario((actual) => ({
+      ...actual,
+      nombre: juego.nombre,
+      genero: juego.genero || actual.genero,
+      imagen: juego.imagen || actual.imagen,
+      plataformas: (juego.plataformas || []).join(", "),
+      rawgId: String(juego.rawgId),
+    }));
+    setResultadosRAWG([]);
+    setError("");
   };
 
   const manejarPegadoImagen = (evento) => {
@@ -278,6 +317,7 @@ function Juegos() {
 
   const resetFormulario = () => {
     setFormulario(estadoInicial);
+    setResultadosRAWG([]);
     setImagenPegada(null);
     setEditandoId(null);
     setCatalogoEnEdicionKey(null);
@@ -297,12 +337,18 @@ function Juegos() {
       return;
     }
 
+    if (!formulario.rawgId) {
+      setError("Buscá y seleccioná el juego en los resultados de internet antes de guardarlo.");
+      return;
+    }
+
     const nombre = formulario.nombre.trim();
     const genero = formulario.genero.trim();
     const descripcion = formulario.descripcion.trim();
 
-    if (!nombre || !genero || !descripcion || (!formulario.imagen.trim() && !imagenPegada)) {
-      setError("Completá el nombre, el género, la imagen y la descripción.");
+    if (!nombre || !genero || !descripcion || !formulario.jugadores.trim()
+      || !formulario.plataformas.trim() || (!formulario.imagen.trim() && !imagenPegada)) {
+      setError("Completá el género, los jugadores, las plataformas, la imagen y la descripción.");
       return;
     }
 
@@ -324,6 +370,9 @@ function Juegos() {
       const payload = {
         nombre,
         genero,
+        rawgId: Number(formulario.rawgId),
+        jugadores: formulario.jugadores.trim(),
+        plataformas: formulario.plataformas.split(",").map((plataforma) => plataforma.trim()).filter(Boolean),
         etiqueta: juegoExistente?.etiqueta || "",
         puntuacion: juegoExistente?.puntuacion ?? null,
         plataforma: juegoExistente?.plataforma || "",
@@ -368,21 +417,32 @@ function Juegos() {
       genero: juego.genero || "",
       imagen: juego.imagen || "",
       descripcion: juego.descripcion || "",
+      jugadores: juego.jugadores || "",
+      plataformas: leerPlataformas(juego.plataformas ?? juego.plataforma).join(", "),
+      rawgId: juego.rawg_id ? String(juego.rawg_id) : "",
     });
     setFormularioAbierto(true);
     setError("");
   };
 
-  const eliminarJuego = async (juego) => {
+  const pedirEliminarJuego = (juego) => {
     if (!esAdministrador) {
       setError("Volvé a iniciar sesión con tu cuenta de administrador para quitar juegos del catálogo.");
       return;
     }
 
-    const confirmar = window.confirm("¿Seguro que querés eliminar este juego?");
-    if (!confirmar) return;
+    setFormularioAbierto(false);
+    setError("");
+    setJuegoPendienteEliminar(juego);
+  };
+
+  const eliminarJuego = async () => {
+    const juego = juegoPendienteEliminar;
+    if (!esAdministrador || !juego) return;
 
     try {
+      setGuardando(true);
+      setError("");
       const catalogKey = juego.catalog_key
         || (buscarJuegoEnCatalogo(juego.nombre) ? normalizarClaveJuego(juego.nombre) : null);
       if (juego.id) {
@@ -405,9 +465,12 @@ function Juegos() {
       if (juegoExpandidoId === juego.id) {
         setJuegoExpandidoId(null);
       }
+      setJuegoPendienteEliminar(null);
     } catch (err) {
       console.error(err);
       setError("No se pudo eliminar el juego.");
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -552,29 +615,18 @@ function Juegos() {
 
                 <div className="form-grid">
                   <label className="full-width">
-                    <span>Nombre</span>
+                    <span>Nombre del juego</span>
                     <input
                       type="text"
                       name="nombre"
                       value={formulario.nombre}
                       onChange={manejarCambio}
-                      placeholder="Ej: Minecraft"
+                      placeholder="Agregar nombre del juego"
                       maxLength={255}
-                      list="game-title-options"
                       required
                     />
-                    <datalist id="game-title-options">
-                      {catalogoJuegos
-                        .filter((juego) => !juegos.some(
-                          (juegoExistente) => sonElMismoJuego(juegoExistente.nombre, juego.nombre)
-                            && juegoExistente.id !== editandoId
-                        ))
-                        .map((juego) => (
-                        <option key={juego.nombre} value={juego.nombre} />
-                      ))}
-                    </datalist>
                     <small className="catalog-hint">
-                      Podés elegir un título sugerido o escribir uno nuevo. Si es nuevo, completá también el género, la imagen y la descripción.
+                      Escribí el nombre y elegí el juego correcto en los resultados.
                     </small>
                     {formulario.nombre.trim() && juegoDuplicado ? (
                       <ZenkaiNotice className="game-title-validation-notice" title="JUEGO YA AGREGADO">
@@ -583,9 +635,58 @@ function Juegos() {
                     ) : null}
                   </label>
 
+                  <div className="full-width">
+                    <button type="button" className="secondary-button" onClick={buscarJuegosExternos} disabled={buscandoRAWG}>
+                      {buscandoRAWG ? "Buscando..." : "Buscar juego"}
+                    </button>
+                    {formulario.rawgId ? <span className="catalog-hint"> Juego verificado.</span> : null}
+                    {resultadosRAWG.length ? (
+                      <div className="game-catalog-search-results" role="listbox" aria-label="Resultados de búsqueda RAWG">
+                        {resultadosRAWG.map((juego) => (
+                          <button
+                            key={juego.rawgId}
+                            type="button"
+                            className="secondary-button"
+                            role="option"
+                            aria-selected={String(formulario.rawgId) === String(juego.rawgId)}
+                            onClick={() => seleccionarJuegoExterno(juego)}
+                          >
+                            {juego.nombre}{juego.fechaLanzamiento ? ` (${juego.fechaLanzamiento.slice(0, 4)})` : ""}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
                   <label>
                     <span>Género</span>
-                    <input type="text" name="genero" value={formulario.genero} onChange={manejarCambio} placeholder="Ej: Arcade" maxLength={120} required />
+                    <input type="text" name="genero" value={formulario.genero} onChange={manejarCambio} placeholder="Agregar género" maxLength={120} required />
+                  </label>
+
+                  <label>
+                    <span>Cantidad de jugadores</span>
+                    <input
+                      type="text"
+                      name="jugadores"
+                      value={formulario.jugadores}
+                      onChange={manejarCambio}
+                      placeholder="Agregar cantidad de jugadores"
+                      maxLength={60}
+                      required
+                    />
+                  </label>
+
+                  <label className="full-width">
+                    <span>Plataformas</span>
+                    <input
+                      type="text"
+                      name="plataformas"
+                      value={formulario.plataformas}
+                      onChange={manejarCambio}
+                      placeholder="Agregar plataforma del juego"
+                      maxLength={500}
+                      required
+                    />
                   </label>
 
                   <label className="full-width">
@@ -681,9 +782,11 @@ function Juegos() {
                           <span className="game-card-genre">{juego.genero || "Sin género"}</span>
                           <span
                             className="game-card-score"
-                            aria-label={`Puntuación: ${obtenerPuntuacionVisible(juego).toFixed(1)} de 10`}
+                            aria-label={`Puntuación: ${formatearPuntuacionJuego(obtenerPuntuacionVisible(juego))}`}
                           >
-                            ⭐ {obtenerPuntuacionVisible(juego).toFixed(1)}/10
+                            {obtenerPuntuacionVisible(juego) === null
+                              ? "Sin calificaciones"
+                              : `⭐ ${formatearPuntuacionJuego(obtenerPuntuacionVisible(juego))}`}
                           </span>
                         </div>
                         <h3>{juego.nombre}</h3>
@@ -736,7 +839,7 @@ function Juegos() {
                                     className="logout-button danger-button"
                                     onClick={(evento) => {
                                       evento.stopPropagation();
-                                      eliminarJuego(juego);
+                                      pedirEliminarJuego(juego);
                                     }}
                                   >
                                     Eliminar
@@ -820,7 +923,7 @@ function Juegos() {
                   key={juego.catalog_key || juego.id || juego.nombre}
                   juego={juego}
                   onEdit={editarJuego}
-                  onDelete={eliminarJuego}
+                  onDelete={pedirEliminarJuego}
                 />
               ))
             ) : (
@@ -832,6 +935,36 @@ function Juegos() {
             )}
           </div>
         </section>
+        {juegoPendienteEliminar ? (
+          <div
+            className="game-modal-backdrop"
+            onMouseDown={(evento) => {
+              if (evento.target === evento.currentTarget && !guardando) setJuegoPendienteEliminar(null);
+            }}
+          >
+            <section
+              className="game-form game-delete-confirmation"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="delete-game-title"
+              aria-describedby="delete-game-description"
+            >
+              <h3 id="delete-game-title">Eliminar juego</h3>
+              <p id="delete-game-description">
+                ¿Deseas eliminar <strong>{juegoPendienteEliminar.nombre}</strong> del catálogo?
+              </p>
+              {error ? <ZenkaiNotice>{error}</ZenkaiNotice> : null}
+              <div className="form-actions">
+                <button type="button" className="secondary-button" disabled={guardando} onClick={() => setJuegoPendienteEliminar(null)}>
+                  Cancelar
+                </button>
+                <button type="button" className="logout-button danger-button" disabled={guardando} onClick={eliminarJuego}>
+                  {guardando ? "Eliminando..." : "Eliminar del catálogo"}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </main>
     </div>
   );

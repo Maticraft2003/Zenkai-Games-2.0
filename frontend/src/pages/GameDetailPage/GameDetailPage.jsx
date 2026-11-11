@@ -1,13 +1,12 @@
 import axios from "axios";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import FavoriteButton from "../../components/FavoriteButton";
-import GameVoteButtons from "../../components/GameVoteButtons";
+import GameRatingStars from "../../components/GameRatingStars";
 import ZenkaiNotice from "../../components/ZenkaiNotice";
 import catalogoJuegos, { buscarJuegoEnCatalogo, obtenerDescripcionJuego } from "../../data/gameCatalog";
 import { useAuth } from "../../context/useAuth";
 import { normalizarClaveJuego } from "../../utils/gameKey";
-import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../../utils/gameRating";
 import { crearHeadersAutenticacion } from "../../utils/authHeaders";
 import { obtenerIdVisitanteAnonimo } from "../../utils/anonymousVisitor";
 import "../Home/Home.css";
@@ -23,11 +22,10 @@ function GameDetailPage() {
   );
   const juegoInicial = juegoDesdeNavegacion || juegoCatalogo || null;
   const [juego, setJuego] = useState(juegoInicial);
-  const [estadisticas, setEstadisticas] = useState({ visitas: 0, likes: 0, dislikes: 0 });
+  const [estadisticas, setEstadisticas] = useState({ visitas: 0 });
   const [juegoCargadoKey, setJuegoCargadoKey] = useState(null);
   const [error, setError] = useState("");
   const solicitudVisita = useRef({ requestKey: null, promise: null });
-  const puntuacionJuego = obtenerPuntuacionJuego(estadisticas);
   const descripcionJuego = juego?.descripcion
     || obtenerDescripcionJuego(juego?.nombre)
     || "Todavía no hay una descripción para este juego.";
@@ -89,8 +87,6 @@ function GameDetailPage() {
           setError("");
           setEstadisticas({
             visitas: Number(datosJuego.visitas) || 0,
-            likes: Number(datosJuego.likes) || 0,
-            dislikes: Number(datosJuego.dislikes) || 0,
           });
         }
       })
@@ -110,14 +106,6 @@ function GameDetailPage() {
       ignore = true;
     };
   }, [gameKey, juegoInicial, usuario?.id, usuario?.token]);
-
-  const actualizarEstadisticas = useCallback((datosJuego) => {
-    setEstadisticas({
-      visitas: Number(datosJuego.visitas) || 0,
-      likes: Number(datosJuego.likes) || 0,
-      dislikes: Number(datosJuego.dislikes) || 0,
-    });
-  }, []);
 
   const cerrarSesion = () => {
     logout();
@@ -171,9 +159,6 @@ function GameDetailPage() {
             <div className="game-detail-info">
               <p className="section-label">{juego.genero || "VIDEOJUEGO"}</p>
               <h1>{juego.nombre}</h1>
-              <span className="game-card-score" aria-label={`Puntuación: ${formatearPuntuacionJuego(puntuacionJuego)}`}>
-                ⭐ {formatearPuntuacionJuego(puntuacionJuego)}
-              </span>
               <p className="game-detail-description">
                 {descripcionJuego}
               </p>
@@ -183,21 +168,10 @@ function GameDetailPage() {
                   <strong>{estadisticas.visitas}</strong>
                   <span>Visitas</span>
                 </div>
-                <div>
-                  <strong>{estadisticas.likes}</strong>
-                  <span>Me gusta</span>
-                </div>
-                <div>
-                  <strong>{estadisticas.dislikes}</strong>
-                  <span>No me gusta</span>
-                </div>
               </div>
 
               <div className="game-detail-actions">
-                <GameVoteButtons
-                  juego={{ ...juego, ...estadisticas }}
-                  onStatsChange={actualizarEstadisticas}
-                />
+                <GameRatingStars juego={juego} />
                 <FavoriteButton juego={juego} />
               </div>
             </div>

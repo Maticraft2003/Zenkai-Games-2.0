@@ -1,0 +1,125 @@
+[1mdiff --git a/backend/server.js b/backend/server.js[m
+[1mindex a42829a..9a0ab5d 100644[m
+[1m--- a/backend/server.js[m
+[1m+++ b/backend/server.js[m
+[36m@@ -219,14 +219,6 @@[m [mconst validarDatosJuego = (datos) => {[m
+     return null;[m
+ };[m
+ [m
+[31m-const validarTituloJuego = (nombre, nombreActual = "") => {[m
+[31m-    const clave = normalizarClaveJuego(nombre);[m
+[31m-    if (TITULOS_JUEGOS_PERMITIDOS.has(clave) || (nombreActual && clave === normalizarClaveJuego(nombreActual))) {[m
+[31m-        return null;[m
+[31m-    }[m
+[31m-    return "El nombre debe corresponder a un juego del catálogo permitido.";[m
+[31m-};[m
+[31m-[m
+ const esNombreDuplicado = (error) => error?.message?.includes("juegos.nombre_key");[m
+ [m
+ const CONSULTA_JUEGOS_POPULARIDAD = `[m
+[36m@@ -1144,11 +1136,6 @@[m [mapp.post("/juegos", requerirSesion, (req, res) => {[m
+             return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });[m
+         }[m
+ [m
+[31m-        const titleError = validarTituloJuego(nombre);[m
+[31m-        if (titleError) {[m
+[31m-            return res.status(400).json({ success: false, mensaje: titleError });[m
+[31m-        }[m
+[31m-[m
+         db.run([m
+             `INSERT INTO juegos([m
+                 nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion,[m
+[36m@@ -1216,7 +1203,7 @@[m [mapp.put("/juegos/:id", requerirAdministrador, (req, res) => {[m
+     const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;[m
+     const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;[m
+ [m
+[31m-    db.get("SELECT nombre FROM juegos WHERE id = ?", [id], (gameError, juegoActual) => {[m
+[32m+[m[32m    db.get("SELECT 1 FROM juegos WHERE id = ?", [id], (gameError) => {[m
+         if (gameError) {[m
+             return res.status(500).json({ success: false, mensaje: "No se pudo validar el juego." });[m
+         }[m
+[36m@@ -1232,11 +1219,6 @@[m [mapp.put("/juegos/:id", requerirAdministrador, (req, res) => {[m
+                     return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });[m
+                 }[m
+ [m
+[31m-                const titleError = juegoActual ? validarTituloJuego(nombre, juegoActual.nombre) : null;[m
+[31m-                if (titleError) {[m
+[31m-                    return res.status(400).json({ success: false, mensaje: titleError });[m
+[31m-                }[m
+[31m-[m
+                 db.run([m
+                     `UPDATE juegos[m
+                      SET nombre = ?, nombre_key = ?, genero = ?, puntuacion = ?, plataforma = ?,[m
+[1mdiff --git a/frontend/src/pages/Juegos.jsx b/frontend/src/pages/Juegos.jsx[m
+[1mindex 3c94964..596134b 100644[m
+[1m--- a/frontend/src/pages/Juegos.jsx[m
+[1m+++ b/frontend/src/pages/Juegos.jsx[m
+[36m@@ -138,16 +138,15 @@[m [mfunction Juegos() {[m
+     }[m
+   }, [location.pathname, location.state, navigate]);[m
+ [m
+[31m-  const generos = ["Todos", ...new Set(juegos.map((juego) => juego.genero).filter(Boolean))];[m
+[31m-  const juegosFiltrados = juegos.filter((juego) => ([m
+[32m+[m[32m  const juegosDeLaLista = juegos.filter([m
+[32m+[m[32m    (juego) => juego.genero?.trim().toLocaleLowerCase() !== "terror"[m
+[32m+[m[32m  );[m
+[32m+[m[32m  const generos = ["Todos", ...new Set(juegosDeLaLista.map((juego) => juego.genero).filter(Boolean))];[m
+[32m+[m[32m  const juegosFiltrados = juegosDeLaLista.filter((juego) => ([m
+     (generoActivo === "Todos" || juego.genero === generoActivo)[m
+       && coincideBusquedaJuego(juego, busquedaJuegos)[m
+   ));[m
+   const nombreJuegoNormalizado = normalizarClaveJuego(formulario.nombre);[m
+[31m-  const nombreJuegoValido = Boolean(buscarJuegoEnCatalogo(formulario.nombre))[m
+[31m-    || (Boolean(editandoId) && juegos.some([m
+[31m-      (juego) => juego.id === editandoId && normalizarClaveJuego(juego.nombre) === nombreJuegoNormalizado[m
+[31m-    ));[m
+   const juegoDuplicado = juegos.some([m
+     (juego) => juego.id !== editandoId && sonElMismoJuego(juego.nombre, formulario.nombre)[m
+   );[m
+[36m@@ -308,11 +307,6 @@[m [mfunction Juegos() {[m
+       return;[m
+     }[m
+ [m
+[31m-    if (!nombreJuegoValido) {[m
+[31m-      setError("Solo se pueden agregar juegos reales reconocidos del catálogo. Revisá el nombre; no se permiten palabras inventadas.");[m
+[31m-      return;[m
+[31m-    }[m
+[31m-[m
+     if (juegoDuplicado) {[m
+       setError("Este juego ya está agregado al catálogo. No se puede repetir; primero eliminá el juego existente.");[m
+       return;[m
+[36m@@ -477,7 +471,7 @@[m [mfunction Juegos() {[m
+             ) : null}[m
+           </div>[m
+           <p className="genre-filter-status">[m
+[31m-            Por ahora podés proponer juegos desde acá. Solo se aceptan títulos reconocidos y que todavía no estén en el catálogo.[m
+[32m+[m[32m            Agregá juegos nuevos de cualquier género. Los títulos conocidos completan sus datos automáticamente; para otros, completá la información manualmente.[m
+           </p>[m
+           {error && !formularioAbierto ? <ZenkaiNotice>{error}</ZenkaiNotice> : null}[m
+ [m
+[36m@@ -581,14 +575,9 @@[m [mfunction Juegos() {[m
+                       ))}[m
+                     </datalist>[m
+                     <small className="catalog-hint">[m
+[31m-                      Elegí un título real reconocido del catálogo. No se aceptan nombres inventados.[m
+[32m+[m[32m                      Podés elegir un título sugerido o escribir uno nuevo. Si es nuevo, completá también el género, la imagen y la descripción.[m
+                     </small>[m
+[31m-                    {formulario.nombre.trim() && !nombreJuegoValido ? ([m
+[31m-                      <ZenkaiNotice className="game-title-validation-notice" title="JUEGO NO RECONOCIDO">[m
+[31m-                        Ese nombre no corresponde a un juego del catálogo y no se puede agregar.[m
+[31m-                      </ZenkaiNotice>[m
+[31m-                    ) : null}[m
+[31m-                    {formulario.nombre.trim() && nombreJuegoValido && juegoDuplicado ? ([m
+[32m+[m[32m                    {formulario.nombre.trim() && juegoDuplicado ? ([m
+                       <ZenkaiNotice className="game-title-validation-notice" title="JUEGO YA AGREGADO">[m
+                         Este juego ya está en el catálogo y no se puede repetir.[m
+                       </ZenkaiNotice>[m
+[36m@@ -646,7 +635,7 @@[m [mfunction Juegos() {[m
+                   <button[m
+                     type="submit"[m
+                     className="primary-button"[m
+[31m-                    disabled={guardando || !usuario?.token || !nombreJuegoValido || juegoDuplicado}[m
+[32m+[m[32m                    disabled={guardando || !usuario?.token || !nombreJuegoNormalizado || juegoDuplicado}[m
+                   >[m
+                     {guardando ? "Guardando..." : editandoId || catalogoEnEdicionKey ? "Actualizar juego" : "Guardar juego"}[m
+                   </button>[m

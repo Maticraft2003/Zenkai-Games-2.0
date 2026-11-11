@@ -1,51 +1,33 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import FavoriteButton from "./FavoriteButton";
-import GameVoteButtons from "./GameVoteButtons";
+import GameRatingStars from "./GameRatingStars";
 import { obtenerDescripcionJuego } from "../data/gameCatalog";
 import { normalizarClaveJuego } from "../utils/gameKey";
-import { formatearPuntuacionJuego, obtenerPuntuacionJuego } from "../utils/gameRating";
 
 function GameCard({ juego, onEdit, onDelete }) {
   const navigate = useNavigate();
   const datos = juego ?? {};
-  const [estadisticasJuego, setEstadisticasJuego] = useState({
-    visitas: datos.visitas,
-    likes: datos.likes,
-    dislikes: datos.dislikes,
-  });
-  const puntuacionJuego = obtenerPuntuacionJuego(estadisticasJuego);
   const descripcion = datos.descripcion?.trim()
     || obtenerDescripcionJuego(datos.nombre)
     || "Todavía no hay una descripción disponible para este juego.";
   const [expandida, setExpandida] = useState(false);
-  const actualizarVotos = useCallback((juegoActualizado) => {
-    setEstadisticasJuego({
-      visitas: juegoActualizado.visitas,
-      likes: juegoActualizado.likes,
-      dislikes: juegoActualizado.dislikes,
-    });
-  }, []);
   const mostrarValor = (valor) => (
     valor === undefined || valor === null || valor === "" ? "Sin datos" : String(valor)
   );
 
   const estadisticas = [
-    { label: "Visitas", value: mostrarValor(estadisticasJuego.visitas) },
-    { label: "Me gusta", value: mostrarValor(estadisticasJuego.likes) },
-    { label: "No me gusta", value: mostrarValor(estadisticasJuego.dislikes) },
+    { label: "Visitas", value: mostrarValor(datos.visitas) },
+    { label: "Calificaciones", value: mostrarValor(datos.cantidad_calificaciones) },
   ];
 
   const detalles = [
-    { label: "Género", value: datos.genero },
     { label: "Etiqueta", value: datos.etiqueta },
     { label: "Plataforma", value: datos.plataforma },
     { label: "Jugadores", value: datos.jugadores },
     { label: "Dificultad", value: datos.dificultad },
-    { label: "Visitas", value: estadisticasJuego.visitas },
-    { label: "Me gusta", value: estadisticasJuego.likes },
-    { label: "No me gusta", value: estadisticasJuego.dislikes },
-    { label: "Puntuación", value: formatearPuntuacionJuego(puntuacionJuego) },
+    { label: "Visitas", value: datos.visitas },
+    { label: "Calificaciones", value: datos.cantidad_calificaciones },
   ];
 
   return (
@@ -64,9 +46,6 @@ function GameCard({ juego, onEdit, onDelete }) {
       <div className="game-card-info">
         <div className="game-card-topline">
           <span className="game-card-genre">{datos.genero || "Sin género"}</span>
-          <span className="game-card-score" aria-label={`Puntuación: ${formatearPuntuacionJuego(puntuacionJuego)}`}>
-            ⭐ {formatearPuntuacionJuego(puntuacionJuego)}
-          </span>
         </div>
 
         <h3>{datos.nombre || "Juego sin nombre"}</h3>
@@ -128,11 +107,7 @@ function GameCard({ juego, onEdit, onDelete }) {
           ))}
         </div>
 
-        <GameVoteButtons
-          juego={{ ...datos, ...estadisticasJuego }}
-          compact
-          onStatsChange={actualizarVotos}
-        />
+        <GameRatingStars juego={datos} compact />
 
         <button
           type="button"

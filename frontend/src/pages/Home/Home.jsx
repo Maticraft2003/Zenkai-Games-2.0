@@ -652,8 +652,7 @@ function Home() {
                     <span>{juego.nombre}</span>
                     <b>⭐ {formatearPuntuacionJuego(puntuacionJuego)}</b>
                     <small>
-                      {Number(juego.visitas) || 0} vistas · {Number(juego.likes) || 0} me gusta ·
-                      {" "}{Number(juego.dislikes) || 0} no me gusta
+                      {Number(juego.visitas) || 0} vistas · {Number(juego.cantidad_calificaciones) || 0} calificaciones
                     </small>
                   </div>
                 );

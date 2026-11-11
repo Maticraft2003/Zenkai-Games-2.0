@@ -55,6 +55,9 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                             genero TEXT NOT NULL,
                             puntuacion REAL,
                             plataforma TEXT,
+                            plataformas TEXT NOT NULL DEFAULT '[]',
+                            jugadores TEXT NOT NULL DEFAULT '',
+                            rawg_id INTEGER,
                             etiqueta TEXT,
                             imagen TEXT,
                             descripcion TEXT,
@@ -309,6 +312,36 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                 }
 
                                 const asegurarNombreKey = () => {
+                                    const columnasNuevas = [
+                                        ["plataformas", "TEXT NOT NULL DEFAULT '[]'"],
+                                        ["jugadores", "TEXT NOT NULL DEFAULT ''"],
+                                        ["rawg_id", "INTEGER"],
+                                    ];
+
+                                    const asegurarColumnasNuevas = (indice = 0) => {
+                                        if (indice >= columnasNuevas.length) {
+                                            crearIndiceUnico();
+                                            return;
+                                        }
+
+                                        const [nombreColumna, definicion] = columnasNuevas[indice];
+                                        if (columns.some((column) => column.name === nombreColumna)) {
+                                            asegurarColumnasNuevas(indice + 1);
+                                            return;
+                                        }
+
+                                        db.run(
+                                            `ALTER TABLE juegos ADD COLUMN ${nombreColumna} ${definicion}`,
+                                            (columnError) => {
+                                                if (columnError) {
+                                                    rechazarInicializacion(columnError);
+                                                    return;
+                                                }
+                                                asegurarColumnasNuevas(indice + 1);
+                                            }
+                                        );
+                                    };
+
                                     const crearIndiceUnico = () => {
                                         db.all("SELECT id, nombre FROM juegos", (gamesError, games) => {
                                             if (gamesError) {
@@ -350,7 +383,7 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                     };
 
                                     if (columns.some((column) => column.name === "nombre_key")) {
-                                        crearIndiceUnico();
+                                        asegurarColumnasNuevas();
                                         return;
                                     }
 
@@ -359,7 +392,7 @@ const db = new sqlite3.Database(databasePath, (connectionError) => {
                                             rechazarInicializacion(migrationError);
                                             return;
                                         }
-                                        crearIndiceUnico();
+                                        asegurarColumnasNuevas();
                                     });
                                 };
 
@@ -443,15 +476,25 @@ function inicializarTablasAuth(database, callback) {
             next
         ),
         (next) => database.run(
+            `CREATE TABLE IF NOT EXISTS juegos_calificaciones (
+                juego_key TEXT NOT NULL,
+                usuario_id INTEGER NOT NULL,
+                puntuacion INTEGER NOT NULL CHECK (puntuacion BETWEEN 1 AND 5),
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (juego_key, usuario_id)
+            )`,
+            next
+        ),
+        (next) => database.run(
             "INSERT OR IGNORE INTO user_roles(user_id) SELECT id FROM usuarios",
             next
         ),
         (next) => database.run(
             `UPDATE user_roles SET role = CASE
-                WHEN user_id = (SELECT id FROM usuarios WHERE email = ?) THEN 'admin'
+                WHEN user_id = (SELECT id FROM usuarios WHERE LOWER(email) = LOWER(?)) THEN 'admin'
                 ELSE 'usuario'
             END`,
-            ["TU_CORREO@EJEMPLO.COM"],
+            ["matiasbeloso2003@gmail.com"],
             next
         ),
     ];

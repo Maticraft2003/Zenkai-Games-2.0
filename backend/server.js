@@ -1,6 +1,17 @@
 import { getHealth } from "./src/controllers/health.controller.js";
 import { createAuthController } from "./src/controllers/auth.controller.js";
 import { createAuthRoutes } from "./src/routes/auth.routes.js";
+import { crearAuthMiddleware } from "./src/middlewares/auth.middleware.js";
+import { crearControladorPerfil } from "./src/controllers/profile.controller.js";
+import { crearRutasPerfil } from "./src/routes/profile.routes.js";
+import { crearControladorJuegos } from "./src/controllers/games.controller.js";
+import { crearRutasJuegos } from "./src/routes/games.routes.js";
+import { crearControladorFavoritos } from "./src/controllers/favorites.controller.js";
+import { crearRutasFavoritos } from "./src/routes/favorites.routes.js";
+import { crearControladorEngagement } from "./src/controllers/engagement.controller.js";
+import { crearRutasEngagement } from "./src/routes/engagement.routes.js";
+import { crearControladorCalificaciones } from "./src/controllers/ratings.controller.js";
+import { crearRutasCalificaciones } from "./src/routes/ratings.routes.js";
 import db, { databaseReady } from "./database.js";
 import bcrypt from "bcrypt";
 import express from "express";
@@ -16,11 +27,10 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "28mb" }));
 
-const PUNTUACION_PREDETERMINADA = 7;
 const DURACION_SESION_MS = 30 * 24 * 60 * 60 * 1000;
-const MAXIMO_CARACTERES_IMAGEN = 28 * 1024 * 1024;
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
+const { requerirSesion, permitirSesionOpcional, requerirAdministrador } = crearAuthMiddleware({ db, hashToken });
 
 const crearSesion = (usuarioId, callback) => {
     const token = randomBytes(32).toString("hex");
@@ -35,227 +45,17 @@ const crearSesion = (usuarioId, callback) => {
 
 const authController = createAuthController({ db, bcrypt, crearSesion });
 app.use(createAuthRoutes(authController));
-
-const requerirSesion = (req, res, next) => {
-    const authorization = req.get("authorization") || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            mensaje: "Iniciá sesión para agregar un juego.",
-            code: "AUTH_REQUIRED",
-        });
-    }
-
-    db.get(
-        "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?",
-        [hashToken(token)],
-        (sessionError, session) => {
-            if (sessionError) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo verificar tu sesión.",
-                });
-            }
-
-            if (!session || Date.parse(session.expires_at) <= Date.now()) {
-                return res.status(401).json({
-                    success: false,
-                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
-                    code: "SESSION_EXPIRED",
-                });
-            }
-
-            req.usuarioId = session.user_id;
-            return next();
-        }
-    );
-};
-
-const permitirSesionOpcional = (req, res, next) => {
-    const authorization = req.get("authorization") || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-
-    if (!token) {
-        req.usuarioId = null;
-        return next();
-    }
-
-    db.get(
-        "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?",
-        [hashToken(token)],
-        (sessionError, session) => {
-            if (sessionError) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo verificar tu sesión.",
-                });
-            }
-
-            if (!session || Date.parse(session.expires_at) <= Date.now()) {
-                return res.status(401).json({
-                    success: false,
-                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
-                    code: "SESSION_EXPIRED",
-                });
-            }
-
-            req.usuarioId = session.user_id;
-            return next();
-        }
-    );
-};
-
-const requerirAdministrador = (req, res, next) => {
-    const authorization = req.get("authorization") || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
-
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            mensaje: "Iniciá sesión como administrador para gestionar juegos.",
-            code: "ADMIN_AUTH_REQUIRED",
-        });
-    }
-
-    db.get(
-        `SELECT user_roles.role, auth_sessions.user_id, auth_sessions.expires_at
-         FROM auth_sessions
-         JOIN user_roles ON user_roles.user_id = auth_sessions.user_id
-         WHERE auth_sessions.token_hash = ?`,
-        [hashToken(token)],
-        (sessionError, session) => {
-            if (sessionError) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo verificar el permiso de administración.",
-                });
-            }
-
-            if (!session || Date.parse(session.expires_at) <= Date.now()) {
-                return res.status(401).json({
-                    success: false,
-                    mensaje: "Tu sesión venció. Iniciá sesión nuevamente.",
-                    code: "SESSION_EXPIRED",
-                });
-            }
-
-            if (session.role !== "admin") {
-                return res.status(403).json({
-                    success: false,
-                    mensaje: "Solo un administrador puede gestionar los juegos.",
-                    code: "ADMIN_REQUIRED",
-                });
-            }
-
-            req.usuarioAdminId = session.user_id;
-            return next();
-        }
-    );
-};
-
-const requerirPropietarioComunidad = (req, res, next) => {
-    db.get(
-        `SELECT comunidad.owner_user_id,
-                COALESCE(user_roles.role, 'usuario') AS role
-         FROM comunidad
-         LEFT JOIN user_roles ON user_roles.user_id = ?
-         WHERE comunidad.id = ?`,
-        [req.usuarioId, req.params.id],
-        (error, publicacion) => {
-            if (error) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo verificar el permiso sobre la publicación.",
-                });
-            }
-
-            if (!publicacion) {
-                return res.status(404).json({ success: false, mensaje: "Publicación no encontrada." });
-            }
-
-            if (publicacion.role !== "admin" && publicacion.owner_user_id !== req.usuarioId) {
-                return res.status(403).json({
-                    success: false,
-                    mensaje: "Solo quien creó esta publicación o un administrador puede modificarla.",
-                });
-            }
-
-            return next();
-        }
-    );
-};
-
-const validarDatosJuego = (datos) => {
-    const camposObligatorios = [
-        ["nombre", "El nombre"],
-        ["genero", "El género"],
-        ["imagen", "La imagen"],
-        ["descripcion", "La descripción"]
-    ];
-
-    for (const [campo, etiqueta] of camposObligatorios) {
-        if (typeof datos?.[campo] !== "string" || !datos[campo].trim()) {
-            return `${etiqueta} es obligatorio.`;
-        }
-    }
-
-    const limites = [
-        ["nombre", 255, "El nombre"],
-        ["genero", 120, "El género"],
-        ["imagen", MAXIMO_CARACTERES_IMAGEN, "La imagen"],
-        ["descripcion", 10000, "La descripción"]
-    ];
-
-    for (const [campo, maximo, etiqueta] of limites) {
-        if (datos[campo].trim().length > maximo) {
-            return `${etiqueta} supera el máximo permitido de ${maximo} caracteres.`;
-        }
-    }
-
-    const puntuacion = datos?.puntuacion;
-    if (puntuacion !== undefined && puntuacion !== null && puntuacion !== "") {
-        const valorPuntuacion = Number(puntuacion);
-        if (!Number.isFinite(valorPuntuacion) || valorPuntuacion < 0 || valorPuntuacion > 10) {
-            return "La puntuación debe ser un número entre 0 y 10.";
-        }
-    }
-
-    return null;
-};
-
-const esNombreDuplicado = (error) => error?.message?.includes("juegos.nombre_key");
-
-const CONSULTA_JUEGOS_POPULARIDAD = `
-    SELECT juegos.id, juegos.nombre, juegos.genero, juegos.puntuacion,
-           juegos.plataforma, juegos.etiqueta, juegos.imagen, juegos.descripcion,
-           juegos.catalog_key, juegos.created_at,
-           COALESCE(visitas.visitas, 0) AS visitas,
-           COALESCE(likes.likes, 0) AS likes,
-           COALESCE(dislikes.dislikes, 0) AS dislikes,
-           CASE
-               WHEN COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0) = 0 THEN NULL
-               ELSE ROUND(
-                   10.0 * COALESCE(likes.likes, 0)
-                   / (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)),
-                   1
-               )
-           END AS puntuacion_comunidad,
-           COALESCE(visitas.visitas, 0) + 2 * COALESCE(likes.likes, 0) AS popularidad
-    FROM juegos
-    LEFT JOIN juegos_visitas AS visitas ON visitas.juego_key = juegos.nombre_key
-    LEFT JOIN (
-        SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
-    ) AS likes ON likes.juego_key = juegos.nombre_key
-    LEFT JOIN (
-        SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
-    ) AS dislikes ON dislikes.juego_key = juegos.nombre_key
-    ORDER BY puntuacion_comunidad IS NULL ASC, puntuacion_comunidad DESC,
-             (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)) DESC,
-             visitas DESC, likes DESC,
-             juegos.nombre COLLATE NOCASE ASC, juegos.id ASC
-`;
+app.use("/perfil", crearRutasPerfil(crearControladorPerfil({ db, bcrypt }), requerirSesion));
+app.use(crearRutasJuegos(crearControladorJuegos({ db }), requerirAdministrador));
+app.use(crearRutasFavoritos(crearControladorFavoritos({ db }), requerirSesion));
+app.use("/engagement", crearRutasEngagement(crearControladorEngagement({ db }), {
+    permitirSesionOpcional,
+    requerirSesion,
+}));
+app.use("/calificaciones", crearRutasCalificaciones(crearControladorCalificaciones({ db }), {
+    permitirSesionOpcional,
+    requerirSesion,
+}));
 
 const CONSULTA_RANKINGS_JUEGOS = `
     WITH juegos_catalogo AS (
@@ -319,191 +119,6 @@ const CONSULTA_RANKINGS_JUEGOS = `
 app.get("/", getHealth);
 
 const PORT = process.env.PORT || 3001;
-
-app.get("/perfil/:id", requerirSesion, (req, res) => {
-    if (Number(req.params.id) !== req.usuarioId) {
-        return res.status(403).json({ success: false, mensaje: "No podés consultar el perfil de otra cuenta." });
-    }
-    const id = req.usuarioId;
-
-    db.get(
-        `SELECT usuarios.id, usuarios.username, usuarios.email,
-                COALESCE(user_roles.role, 'usuario') AS role
-         FROM usuarios
-         LEFT JOIN user_roles ON user_roles.user_id = usuarios.id
-         WHERE usuarios.id = ?`,
-        [id],
-        (err, usuario) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo consultar el perfil."
-                });
-            }
-
-            if (!usuario) {
-                return res.status(404).json({
-                    success: false,
-                    mensaje: "No se encontró la cuenta."
-                });
-            }
-
-            return res.json({ success: true, usuario });
-        }
-    );
-});
-
-app.patch("/perfil/:id", requerirSesion, (req, res) => {
-    if (Number(req.params.id) !== req.usuarioId) {
-        return res.status(403).json({ success: false, mensaje: "No podés modificar el perfil de otra cuenta." });
-    }
-    const id = req.usuarioId;
-    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
-    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
-    const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
-    const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
-
-    if (!username || !email || !currentPassword) {
-        return res.status(400).json({
-            success: false,
-            mensaje: "El nombre, el correo y la contraseña actual son obligatorios."
-        });
-    }
-
-    if (newPassword && (newPassword.length < 8 || Buffer.byteLength(newPassword, "utf8") > 72)) {
-        return res.status(400).json({
-            success: false,
-            mensaje: "La nueva contraseña debe tener al menos 8 caracteres y no superar los 72 bytes."
-        });
-    }
-
-    db.get(
-        `SELECT usuarios.id, usuarios.username, usuarios.email, usuarios.password,
-                COALESCE(user_roles.role, 'usuario') AS role
-         FROM usuarios
-         LEFT JOIN user_roles ON user_roles.user_id = usuarios.id
-         WHERE usuarios.id = ?`,
-        [id],
-        async (findError, usuario) => {
-            if (findError) {
-              return res.status(500).json({
-                  success: false,
-                  mensaje: "No se pudo consultar el perfil."
-              });
-            }
-
-            if (!usuario) {
-              return res.status(404).json({
-                  success: false,
-                  mensaje: "No se encontró la cuenta."
-              });
-            }
-
-            try {
-              const contrasenaValida = await bcrypt.compare(currentPassword, usuario.password);
-              if (!contrasenaValida) {
-                  return res.status(401).json({
-                      success: false,
-                      mensaje: "La contraseña actual es incorrecta."
-                  });
-              }
-
-              const hashedPassword = newPassword
-                  ? await bcrypt.hash(newPassword, 12)
-                  : usuario.password;
-
-              db.run(
-                  `UPDATE usuarios
-                   SET username = ?, email = ?, password = ?
-                   WHERE id = ?`,
-                  [username, email, hashedPassword, id],
-                  function (updateError) {
-                      if (updateError) {
-                          if (updateError.code === "SQLITE_CONSTRAINT") {
-                              return res.status(409).json({
-                                  success: false,
-                                  mensaje: "Ese correo ya está registrado por otra cuenta."
-                              });
-                          }
-
-                          return res.status(500).json({
-                              success: false,
-                              mensaje: "No se pudo actualizar el perfil."
-                          });
-                      }
-
-                      return res.json({
-                          success: true,
-                          mensaje: "Perfil actualizado correctamente.",
-                          usuario: { id: usuario.id, username, email, role: usuario.role }
-                      });
-                  }
-              );
-            } catch (passwordError) {
-              console.error("No se pudo verificar o actualizar la contraseña:", passwordError);
-              return res.status(500).json({
-                  success: false,
-                  mensaje: "No se pudo actualizar el perfil."
-              });
-            }
-        }
-    );
-});
-
-app.get("/juegos", (req, res) => {
-    db.all(CONSULTA_JUEGOS_POPULARIDAD, (err, rows) => {
-        if (err){
-            return res.status(500).json({
-                success: false,
-                mensaje: "Error al obtener los juegos",
-                error: err.message
-            });
-        }
-
-        return res.json({
-            success: true,
-            juegos: rows
-        });
-    }); 
-});
-
-app.get("/catalogo-juegos/ocultos", (req, res) => {
-    db.all("SELECT juego_key FROM juegos_catalogo_ocultos", (err, rows) => {
-        if (err) {
-            return res.status(500).json({
-                success: false,
-                mensaje: "No se pudo cargar el catálogo oculto."
-            });
-        }
-
-        return res.json({
-            success: true,
-            juegos: rows.map((row) => row.juego_key)
-        });
-    });
-});
-
-app.delete("/catalogo-juegos/:juegoKey", requerirAdministrador, (req, res) => {
-    const { juegoKey } = req.params;
-    if (!juegoKey) {
-        return res.status(400).json({ success: false, mensaje: "El juego no es válido." });
-    }
-
-    db.run(
-        "INSERT OR IGNORE INTO juegos_catalogo_ocultos(juego_key) VALUES(?)",
-        [juegoKey],
-        (err) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo quitar el juego del catálogo."
-                });
-            }
-
-            return res.json({ success: true, mensaje: "Juego eliminado del catálogo." });
-        }
-    );
-});
 
 app.get("/engagement/juegos/recomendados", (req, res) => {
     db.all(
@@ -918,387 +533,6 @@ app.delete("/engagement/juegos/:gameKey/dislike", requerirSesion, (req, res) => 
     actualizarVotoJuego(req, res, "dislike", true);
 });
 
-// Obtener un juego por ID
-app.get("/juegos/:id", (req, res) => {
-    const { id } = req.params;
-    db.get(
-        `SELECT juegos.id, juegos.nombre, juegos.genero, juegos.puntuacion,
-                juegos.plataforma, juegos.etiqueta, juegos.imagen, juegos.descripcion,
-                juegos.catalog_key,
-                COALESCE(visitas.visitas, 0) AS visitas,
-                COALESCE(likes.likes, 0) AS likes,
-                COALESCE(dislikes.dislikes, 0) AS dislikes,
-                CASE
-                    WHEN COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0) = 0 THEN NULL
-                    ELSE ROUND(
-                        10.0 * COALESCE(likes.likes, 0)
-                        / (COALESCE(likes.likes, 0) + COALESCE(dislikes.dislikes, 0)),
-                        1
-                    )
-                END AS puntuacion_comunidad,
-                COALESCE(visitas.visitas, 0) + 2 * COALESCE(likes.likes, 0) AS popularidad
-         FROM juegos
-         LEFT JOIN juegos_visitas AS visitas ON visitas.juego_key = juegos.nombre_key
-         LEFT JOIN (
-             SELECT juego_key, COUNT(*) AS likes FROM juegos_likes GROUP BY juego_key
-         ) AS likes ON likes.juego_key = juegos.nombre_key
-         LEFT JOIN (
-             SELECT juego_key, COUNT(*) AS dislikes FROM juegos_dislikes GROUP BY juego_key
-         ) AS dislikes ON dislikes.juego_key = juegos.nombre_key
-         WHERE juegos.id = ?
-         `,
-        [id],
-        (err, juegos) => {
-            if (err){
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "Error al buscar el juego",
-                    error: err.message
-                });
-            }
-
-            if (!juegos) {
-                return res.status(404).json({
-                    success: false,
-                    mensaje: "Juego no encontrado"
-                });
-            }
-
-            return res.json({
-                success: true,
-                juego: juegos
-            });
-        }
-    );
-});
-
-// Crear un juego nuevo
-app.post("/juegos", requerirSesion, (req, res) => {
-    const errorValidacion = validarDatosJuego(req.body);
-    if (errorValidacion) {
-        return res.status(400).json({ success: false, mensaje: errorValidacion });
-    }
-
-    const { nombre, genero, plataforma, etiqueta, imagen, descripcion } = req.body;
-    const nombreKey = normalizarClaveJuego(nombre);
-    const puntuacion = req.body.puntuacion === undefined
-        || req.body.puntuacion === null
-        || req.body.puntuacion === ""
-        ? PUNTUACION_PREDETERMINADA
-        : Number(req.body.puntuacion);
-    const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
-
-    db.get(
-        `SELECT id FROM juegos
-         WHERE nombre_key = ?
-            OR (? = 'resident evil 4' AND nombre_key = 'resident evil 4 remake')`,
-        [nombreKey, nombreKey],
-        (duplicateError, duplicate) => {
-        if (duplicateError) {
-            return res.status(500).json({ success: false, mensaje: "No se pudo validar el nombre del juego." });
-        }
-        if (duplicate) {
-            return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
-        }
-
-        db.run(
-            `INSERT INTO juegos(
-                nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion,
-                catalog_key, nombre_key, created_at
-             ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-            [
-                nombre.trim(),
-                genero.trim(),
-                puntuacion,
-                plataforma,
-                etiqueta,
-                imagen.trim(),
-                descripcion.trim(),
-                catalogKey,
-                nombreKey,
-            ],
-            function (err) {
-                if (err) {
-                    if (esNombreDuplicado(err)) {
-                        return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
-                    }
-                    return res.status(500).json({
-                        success: false,
-                        mensaje: "Error al crear el juego",
-                        error: err.message
-                    });
-                }
-
-                const id = this.lastID;
-                const responderCreacion = () => res.status(201).json({
-                    success: true,
-                    mensaje: "Juego creado correctamente",
-                    id
-                });
-
-                if (!catalogKey) return responderCreacion();
-
-                db.run(
-                    "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
-                    [catalogKey],
-                    (restoreError) => {
-                        if (restoreError) {
-                            return res.status(500).json({
-                                success: false,
-                                mensaje: "El juego se guardó, pero no se pudo actualizar el catálogo."
-                            });
-                        }
-
-                        return responderCreacion();
-                    }
-                );
-            }
-        );
-    });
-});
-
-// Editar un juego
-app.put("/juegos/:id", requerirAdministrador, (req, res) => {
-    const errorValidacion = validarDatosJuego(req.body);
-    if (errorValidacion) {
-        return res.status(400).json({ success: false, mensaje: errorValidacion });
-    }
-
-    const { id } = req.params;
-    const { nombre, genero, puntuacion, plataforma, etiqueta, imagen, descripcion } = req.body;
-    const catalogKey = typeof req.body.catalogKey === "string" ? req.body.catalogKey : null;
-
-    db.get("SELECT 1 FROM juegos WHERE id = ?", [id], (gameError) => {
-        if (gameError) {
-            return res.status(500).json({ success: false, mensaje: "No se pudo validar el juego." });
-        }
-
-        db.get(
-            "SELECT id FROM juegos WHERE nombre_key = ? AND id != ?",
-            [normalizarClaveJuego(nombre), id],
-            (duplicateError, duplicate) => {
-                if (duplicateError) {
-                    return res.status(500).json({ success: false, mensaje: "No se pudo validar el nombre del juego." });
-                }
-                if (duplicate) {
-                    return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
-                }
-
-                db.run(
-                    `UPDATE juegos
-                     SET nombre = ?, nombre_key = ?, genero = ?, puntuacion = ?, plataforma = ?,
-                         etiqueta = ?, imagen = ?, descripcion = ?, catalog_key = ?
-                     WHERE id = ?`,
-                    [
-                        nombre.trim(),
-                        normalizarClaveJuego(nombre),
-                        genero.trim(),
-                        puntuacion,
-                        plataforma,
-                        etiqueta,
-                        imagen.trim(),
-                        descripcion.trim(),
-                        catalogKey,
-                        id,
-                    ],
-                    function (err) {
-                        if (err) {
-                            if (esNombreDuplicado(err)) {
-                                return res.status(409).json({ success: false, mensaje: "Ya existe un juego con ese nombre." });
-                            }
-                            return res.status(500).json({
-                                success: false,
-                                mensaje: "Error al actualizar el juego",
-                                error: err.message
-                            });
-                        }
-
-                        const cambios = this.changes;
-                        const responderActualizacion = () => res.json({
-                            success: true,
-                            mensaje: "Juego actualizado correctamente",
-                            cambios
-                        });
-
-                        if (!catalogKey) return responderActualizacion();
-
-                        db.run(
-                            "DELETE FROM juegos_catalogo_ocultos WHERE juego_key = ?",
-                            [catalogKey],
-                            (restoreError) => {
-                                if (restoreError) {
-                                    return res.status(500).json({
-                                        success: false,
-                                        mensaje: "El juego se actualizó, pero no se pudo actualizar el catálogo."
-                                    });
-                                }
-
-                                return responderActualizacion();
-                            }
-                        );
-                    }
-                );
-            }
-        );
-    });
-});
-
-// Eliminar un juego
-app.delete("/juegos/:id", requerirAdministrador, (req, res) => {
-    const { id } = req.params;
-    const catalogKey = typeof req.body?.catalogKey === "string" ? req.body.catalogKey : "";
-
-    db.run("DELETE FROM juegos WHERE id = ?", [id], function (err) {
-        if (err) {
-            return res.status(500).json({
-                success: false,
-                mensaje: "Error al eliminar el juego",
-                error: err.message
-            });
-        }
-
-        const cambios = this.changes;
-        if (!catalogKey) {
-            return res.json({
-                success: true,
-                mensaje: "Juego eliminado correctamente",
-                cambios
-            });
-        }
-
-        db.run(
-            "INSERT OR IGNORE INTO juegos_catalogo_ocultos(juego_key) VALUES(?)",
-            [catalogKey],
-            (hideError) => {
-                if (hideError) {
-                    return res.status(500).json({
-                        success: false,
-                        mensaje: "El juego se eliminó, pero no se pudo actualizar el catálogo."
-                    });
-                }
-
-                return res.json({
-                    success: true,
-                    mensaje: "Juego eliminado correctamente",
-                    cambios
-                });
-            }
-        );
-    });
-});
-
-app.get("/usuarios/:usuarioId/favoritos", requerirSesion, (req, res) => {
-    const usuarioId = req.usuarioId;
-    if (Number(req.params.usuarioId) !== usuarioId) {
-        return res.status(403).json({ success: false, mensaje: "No podés acceder a favoritos de otra cuenta." });
-    }
-
-    db.all(
-        `SELECT juego_key, nombre, genero, imagen, descripcion
-         FROM favoritos
-         WHERE usuario_id = ?
-         ORDER BY id DESC`,
-        [usuarioId],
-        (err, favoritos) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudieron obtener los juegos favoritos."
-                });
-            }
-
-            return res.json({ success: true, favoritos });
-        }
-    );
-});
-
-app.post("/usuarios/:usuarioId/favoritos", requerirSesion, (req, res) => {
-    const usuarioId = req.usuarioId;
-    if (Number(req.params.usuarioId) !== usuarioId) {
-        return res.status(403).json({ success: false, mensaje: "No podés modificar favoritos de otra cuenta." });
-    }
-    const juego = req.body?.juego;
-    const nombre = typeof juego?.nombre === "string" ? juego.nombre.trim() : "";
-    const genero = typeof juego?.genero === "string" ? juego.genero.trim() : "";
-    const imagen = typeof juego?.imagen === "string" ? juego.imagen.trim() : "";
-    const descripcion = typeof juego?.descripcion === "string" ? juego.descripcion.trim() : "";
-    const juegoKey = normalizarClaveJuego(nombre);
-
-    if (!nombre) {
-        return res.status(400).json({
-            success: false,
-            mensaje: "El juego seleccionado no tiene un nombre válido."
-        });
-    }
-
-    db.get("SELECT id FROM usuarios WHERE id = ?", [usuarioId], (userError, usuario) => {
-        if (userError) {
-            return res.status(500).json({
-                success: false,
-                mensaje: "No se pudo verificar la cuenta."
-            });
-        }
-
-        if (!usuario) {
-            return res.status(404).json({
-                success: false,
-                mensaje: "No se encontró la cuenta."
-            });
-        }
-
-        db.run(
-            `INSERT INTO favoritos(usuario_id, juego_key, nombre, genero, imagen, descripcion)
-             VALUES(?, ?, ?, ?, ?, ?)
-             ON CONFLICT(usuario_id, juego_key) DO UPDATE SET
-                nombre = excluded.nombre,
-                genero = excluded.genero,
-                imagen = excluded.imagen,
-                descripcion = excluded.descripcion`,
-            [usuarioId, juegoKey, nombre, genero, imagen, descripcion],
-            (err) => {
-                if (err) {
-                    return res.status(500).json({
-                        success: false,
-                        mensaje: "No se pudo guardar el juego en favoritos."
-                    });
-                }
-
-                return res.status(201).json({
-                    success: true,
-                    mensaje: "Juego agregado a favoritos."
-                });
-            }
-        );
-    });
-});
-
-app.delete("/usuarios/:usuarioId/favoritos/:juegoKey", requerirSesion, (req, res) => {
-    const { juegoKey } = req.params;
-    const usuarioId = req.usuarioId;
-    if (Number(req.params.usuarioId) !== usuarioId) {
-        return res.status(403).json({ success: false, mensaje: "No podés modificar favoritos de otra cuenta." });
-    }
-
-    db.run(
-        "DELETE FROM favoritos WHERE usuario_id = ? AND juego_key = ?",
-        [usuarioId, juegoKey],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    mensaje: "No se pudo quitar el juego de favoritos."
-                });
-            }
-
-            return res.json({
-                success: true,
-                mensaje: "Juego quitado de favoritos.",
-                cambios: this.changes
-            });
-        }
-    );
-});
-
 const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
     app.get(`/${ruta}`, (req, res) => {
         const consulta = ruta === "comunidad"
@@ -1361,7 +595,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             );
         });
 
-        app.post("/comunidad/:publicacionId/comentarios", requerirSesion, (req, res) => {
+        app.post("/comunidad/:publicacionId/comentarios", requerirAdministrador, (req, res) => {
             const publicacionId = Number(req.params.publicacionId);
             const usuarioId = req.usuarioId;
             const contenido = typeof req.body?.contenido === "string" ? req.body.contenido.trim() : "";
@@ -1413,7 +647,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             });
         });
 
-        app.post("/comunidad/comentarios/:comentarioId/like", requerirSesion, (req, res) => {
+        app.post("/comunidad/comentarios/:comentarioId/like", requerirAdministrador, (req, res) => {
             const comentarioId = Number(req.params.comentarioId);
             const usuarioId = req.usuarioId;
 
@@ -1453,7 +687,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
             });
         });
 
-        app.delete("/comunidad/comentarios/:comentarioId/like", requerirSesion, (req, res) => {
+        app.delete("/comunidad/comentarios/:comentarioId/like", requerirAdministrador, (req, res) => {
             const comentarioId = Number(req.params.comentarioId);
             const usuarioId = req.usuarioId;
 
@@ -1475,7 +709,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         });
     }
 
-    app.post(`/${ruta}`, ruta === "noticias" ? requerirAdministrador : requerirSesion, (req, res) => {
+    app.post(`/${ruta}`, requerirAdministrador, (req, res) => {
         const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
         const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
 
@@ -1520,9 +754,7 @@ const crearRutasDeContenido = (ruta, tabla, claveRespuesta) => {
         );
     });
 
-    const permisosEdicion = ruta === "noticias"
-        ? [requerirAdministrador]
-        : [requerirSesion, requerirPropietarioComunidad];
+    const permisosEdicion = [requerirAdministrador];
 
     app.put(`/${ruta}/:id`, ...permisosEdicion, (req, res) => {
         const { id } = req.params;
