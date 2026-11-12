@@ -9,7 +9,6 @@ const config = {
 };
 
 export default function ContentPage({ tipo = "noticias" }) {
-  const { tipo = "noticias" } = useParams();
   const settings = config[tipo];
   const { usuario } = useAuth();
   const navigate = useNavigate();
