@@ -75,6 +75,13 @@ export async function initializeDatabase() {
     imagen TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
+  // Limpia posibles votos duplicados de instalaciones anteriores y garantiza
+  // una sola valoración por usuario y juego para que el UPSERT funcione.
+  await run(`DELETE FROM valoraciones
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM valoraciones GROUP BY usuario_id, juego_id
+    )`);
+  await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_valoraciones_usuario_juego ON valoraciones(usuario_id, juego_id)");
   await run("CREATE INDEX IF NOT EXISTS idx_valoraciones_juego ON valoraciones(juego_id)");
 
   const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
