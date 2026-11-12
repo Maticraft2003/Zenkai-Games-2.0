@@ -1,0 +1,12 @@
+import express from "express";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
+import routes from "./routes/index.js";
+import {notFound,errorHandler} from "./middleware/errorHandler.js";
+const app=express();
+app.use(cors({origin:process.env.FRONTEND_URL||"http://localhost:5173"}));
+app.use(express.json({limit:"1mb"}));
+app.use(rateLimit({windowMs:15*60*1000,limit:300,standardHeaders:"draft-7",legacyHeaders:false}));
+app.get("/",(req,res)=>res.json({success:true,mensaje:"Backend de Zenkai Games funcionando."}));
+app.use("/api",routes);app.use(notFound);app.use(errorHandler);
+export default app;
