@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const databasePath = path.join(__dirname, "zenkai.db");
-const db = new sqlite3.Database(databasePath);\ndb.run("PRAGMA foreign_keys = ON");
+const db = new sqlite3.Database(databasePath);
+db.run("PRAGMA foreign_keys = ON");
 
 export const run = (sql, params = []) => new Promise((resolve, reject) => {
   db.run(sql, params, function (error) {
