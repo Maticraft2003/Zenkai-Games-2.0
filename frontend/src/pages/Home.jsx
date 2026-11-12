@@ -1,62 +1,20 @@
-import { useAuth } from "../context/useAuth";
-import { useNavigate } from "react-router-dom";
+import {useNavigate} from "react-router-dom";
+import {useAuth} from "../context/useAuth";
 import ParticlesBackground from "../components/ParticlesBackground";
-
-function Home() {
-  const navigate = useNavigate();
-
-  const { logout } = useAuth();   
-
-  const cerrarSesion = () => {    
-    logout();
-    navigate("/");
-  };
-  return (
-    <div className="App" style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
-      <ParticlesBackground />
-
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <h1>Bienvenido a Zenkai Games</h1>
-
-        <header className="navbar">
-          <div className="logo">
-            <h1>Zenkai Games</h1>
-          </div>
-          <div>
-            <p>Login correcto 🎉</p>
-          </div>
-
-          <nav>
-            <ul className="menu">
-              <li><a href="#inicio">Inicio</a></li>
-              <li><a href="#juegos">Juegos</a></li>
-              <li><a href="#rankings">Rankings</a></li>
-              <li><a href="#noticias">Noticias</a></li>
-              <li><a href="#comunidad">Comunidad</a></li>
-              <li><a href="#acerca-de">Acerca de</a></li>
-            </ul>
-          </nav>
-
-          <button onClick={cerrarSesion}>🚪 Cerrar sesión</button>
-
-          <div className="login">
-            <button>Mi Perfil</button>
-          </div>
-        </header>
-
-        <main>
-          {/* Banner Principal */}
-          {/* Juegos Destacados */}
-          {/* Recomendaciones */}
-          {/* Rankings */}
-        </main>
-
-        <footer>
-          {/* Pie de pagina */}
-        </footer>
-      </div>
-    </div>
-  );
+export default function Home(){
+ const navigate=useNavigate();const {logout,usuario}=useAuth();
+ return <div className="App" style={{position:"relative",minHeight:"100vh",overflow:"hidden"}}>
+  <ParticlesBackground/>
+  <div style={{position:"relative",zIndex:1}}>
+   <header className="navbar"><div className="logo"><h1>Zenkai Games</h1></div>
+    <nav><ul className="menu">
+     <li><button onClick={()=>navigate("/home")}>Inicio</button></li>
+     <li><button onClick={()=>navigate("/juegos")}>Juegos</button></li>
+     <li><a href="#rankings">Rankings</a></li><li><a href="#noticias">Noticias</a></li><li><a href="#comunidad">Comunidad</a></li><li><a href="#acerca-de">Acerca de</a></li>
+    </ul></nav>
+    <div className="login"><span>{usuario?.username}</span><button onClick={logout}>🚪 Cerrar sesión</button></div>
+   </header>
+   <main><h1>Bienvenido a Zenkai Games</h1><p>Tu portal al mundo gamer.</p><button onClick={()=>navigate("/juegos")}>Explorar catálogo de juegos</button></main>
+  </div>
+ </div>;
 }
-
-export default Home
