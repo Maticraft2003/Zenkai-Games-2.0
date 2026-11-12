@@ -10,7 +10,7 @@ export default function Home(){
     <nav><ul className="menu">
      <li><button onClick={()=>navigate("/home")}>Inicio</button></li>
      <li><button onClick={()=>navigate("/juegos")}>Juegos</button></li>
-     <li><a href="#rankings">Rankings</a></li><li><a href="#noticias">Noticias</a></li><li><a href="#comunidad">Comunidad</a></li><li><a href="#acerca-de">Acerca de</a></li>
+     <li><a href="#rankings">Rankings</a></li><li><button onClick={()=>navigate("/noticias")}>Noticias</button></li><li><button onClick={()=>navigate("/comunidad")}>Comunidad</button></li><li><a href="#acerca-de">Acerca de</a></li>
     </ul></nav>
     <div className="login"><span>{usuario?.username}</span><button onClick={logout}>🚪 Cerrar sesión</button></div>
    </header>
