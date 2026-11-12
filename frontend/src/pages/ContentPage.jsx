@@ -8,7 +8,7 @@ const config = {
   comentarios: { title: "Comunidad", fields: ["contenido"], labels: ["Comentario"] }
 };
 
-export default function ContentPage() {
+export default function ContentPage({ tipo = "noticias" }) {
   const { tipo = "noticias" } = useParams();
   const settings = config[tipo];
   const { usuario } = useAuth();
