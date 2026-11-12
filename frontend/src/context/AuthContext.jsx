@@ -1,55 +1,12 @@
-import { useState } from "react";
-import { AuthContext } from "./useAuth";
-
-const STORAGE_KEY = "usuario";
-
-function getStoredUser() {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const guardado = window.localStorage.getItem(STORAGE_KEY);
-    return guardado ? JSON.parse(guardado) : null;
-  } catch (error) {
-    console.error("Error al leer el usuario guardado:", error);
-    window.localStorage.removeItem(STORAGE_KEY);
-    return null;
-  }
+import {useState} from "react";
+import {AuthContext} from "./useAuth";
+const KEY="zenkai_session";
+function readSession(){try{return JSON.parse(localStorage.getItem(KEY)||"null");}catch{return null;}}
+export function getToken(){return readSession()?.token||"";}
+function AuthProvider({children}){
+ const [session,setSession]=useState(readSession);
+ const login=(data)=>{const value={token:data.token,usuario:data.usuario};localStorage.setItem(KEY,JSON.stringify(value));setSession(value);};
+ const logout=()=>{localStorage.removeItem(KEY);setSession(null);};
+ return <AuthContext.Provider value={{usuario:session?.usuario||null,token:session?.token||"",login,logout}}>{children}</AuthContext.Provider>;
 }
-
-function AuthProvider({ children }) {
-  const [usuario, setUsuario] = useState(() => getStoredUser());
-
-  const login = (datosUsuario) => {
-    const payload = datosUsuario ?? null;
-
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      }
-    } catch (error) {
-      console.error("Error al guardar el usuario:", error);
-    }
-
-    setUsuario(payload);
-  };
-
-  const logout = () => {
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch (error) {
-      console.error("Error al limpiar el usuario:", error);
-    }
-
-    setUsuario(null);
-  };
-
-  return (
-    <AuthContext.Provider value={{ usuario, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
 export default AuthProvider;
